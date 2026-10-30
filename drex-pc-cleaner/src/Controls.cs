@@ -80,6 +80,7 @@ public class Toggle : Control
 {
     bool _on;
     public event EventHandler? CheckedChanged;
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Checked
     {
         get => _on;
@@ -111,6 +112,7 @@ public class Toggle : Control
 public class DarkBar : Control
 {
     int _v;
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public int Value { get => _v; set { var n = Math.Clamp(value, 0, 100); if (n != _v) { _v = n; Invalidate(); } } }
     public DarkBar()
     {
@@ -141,8 +143,11 @@ public class DarkBar : Control
 public class Ring : Control
 {
     float _v; string _big = "", _small = "";
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public float Value { get => _v; set { if (Math.Abs(_v - value) > 0.01f) { _v = value; Invalidate(); } } }
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string Big { get => _big; set { if (_big != value) { _big = value; Invalidate(); } } }
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public string Small { get => _small; set { if (_small != value) { _small = value; Invalidate(); } } }
     public Ring()
     {
@@ -173,6 +178,7 @@ public class NavItem : Control
 {
     public string Glyph = "";
     bool _sel, _hover;
+    [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Selected { get => _sel; set { if (_sel != value) { _sel = value; Invalidate(); } } }
     public NavItem(string text, string glyph)
     {

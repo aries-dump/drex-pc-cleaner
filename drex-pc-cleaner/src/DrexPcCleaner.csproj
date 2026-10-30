@@ -9,6 +9,7 @@
     <RootNamespace>Drex</RootNamespace>
     <ApplicationIcon>drex.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
     <InvariantGlobalization>true</InvariantGlobalization>
     <UseSystemResourceKeys>true</UseSystemResourceKeys>
     <TieredPGO>false</TieredPGO>
