@@ -12,10 +12,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
           dotnet-quality: 'ga'
+      - name: Find project
+        shell: pwsh
+        run: |
+          Get-ChildItem -Recurse -File | Where-Object { $_.FullName -notmatch '\\.git\\' } | ForEach-Object { $_.FullName.Replace((Get-Location).Path + '\', '') }
+          $p = Get-ChildItem -Recurse -Filter *.csproj | Select-Object -First 1
+          if (-not $p) { Write-Error "No .csproj found in repo"; exit 1 }
+          "PROJ=$($p.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Publish self-contained (no runtime needed)
-        run: dotnet publish src/DrexPcCleaner.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out/self-contained
+        run: dotnet publish "${{ env.PROJ }}" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out/self-contained
       - name: Publish framework-dependent (small)
-        run: dotnet publish src/DrexPcCleaner.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out/small
+        run: dotnet publish "${{ env.PROJ }}" -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out/small
       - uses: actions/upload-artifact@v4
         with:
           name: DREX_PC_CLEANER
