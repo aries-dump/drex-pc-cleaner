@@ -2,314 +2,378 @@ using System.Diagnostics;
 using Microsoft.Win32;
 namespace Drex;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
-    static readonly Color Bg = ColorTranslator.FromHtml("#0B0D12"), Surf = ColorTranslator.FromHtml("#171B24"),
-        Surf2 = ColorTranslator.FromHtml("#202531"), Txt = ColorTranslator.FromHtml("#F4F5F8"),
-        Silver = ColorTranslator.FromHtml("#C4CAD5"), Muted = ColorTranslator.FromHtml("#8B93A4"),
-        Violet = ColorTranslator.FromHtml("#9875FF");
-
     readonly Settings _s = Settings.Load();
-    readonly Panel _content = new() { Dock = DockStyle.Fill, BackColor = Bg };
-    readonly Dictionary<string, Control> _pages = new();   // lazily created
-    readonly Dictionary<string, Button> _nav = new();
+    readonly Panel _content = new() { Dock = DockStyle.Fill, BackColor = Theme.Bg };
+    readonly Dictionary<string, Control> _pages = new();
+    readonly Dictionary<string, NavItem> _nav = new();
     readonly System.Windows.Forms.Timer _ramTimer = new() { Interval = 5000 };
+    static readonly bool IsAdmin = Native.IsAdmin();
     CancellationTokenSource? _cts;
-    bool _busy;
+    bool _busy, _wasMin;
 
-    // Dashboard controls
-    Label _lblReclaim = null!, _lblStatus = null!, _lblRam = null!;
-    ProgressBar _barRam = null!;
-    Button _btnScan = null!, _btnClean = null!, _btnCancel = null!;
-    ListView _lvCats = null!;
+    // dashboard
+    Label _lblReclaim = null!, _lblStatus = null!, _lblRamTxt = null!, _lblDisk = null!, _lblDiskSub = null!;
+    Ring _ring = null!; DarkBar _diskBar = null!;
+    GButton _btnScan = null!, _btnClean = null!, _btnCancel = null!;
+    DarkList _lvCats = null!;
     List<Category> _lastCats = new();
+    long _lastTotal;
+    TextBox? _historyBox;
+
+    static readonly (string key, string glyph)[] Items =
+    {
+        ("Dashboard", "\uE80F"), ("Security", "\uE72E"), ("Deep Clean", "\uE74D"), ("Startup", "\uE7E8"),
+        ("Large Files", "\uE8B7"), ("Duplicates", "\uE8C8"), ("Disk Usage", "\uEDA2"), ("Web Blocker", "\uE783"),
+        ("Backup", "\uE74E"), ("History", "\uE81C"), ("Settings", "\uE713"),
+    };
 
     public MainForm()
     {
-        Text = "DREX PC CLEANER"; BackColor = Bg; ForeColor = Txt; Font = new Font("Segoe UI", 9.5f);
-        Size = new Size(960, 640); MinimumSize = new Size(820, 540); StartPosition = FormStartPosition.CenterScreen;
+        Text = "DREX PC CLEANER"; BackColor = Theme.Bg; ForeColor = Theme.Txt; Font = Theme.F(9.5f);
+        ClientSize = new Size(1120, 720); MinimumSize = new Size(1000, 680); StartPosition = FormStartPosition.CenterScreen;
         try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { }
         DoubleBuffered = true;
 
-        var side = new Panel { Dock = DockStyle.Left, Width = 190, BackColor = Surf };
-        var brand = new Label { Text = "DREX", Font = new Font("Segoe UI Semibold", 20f), ForeColor = Violet, Dock = DockStyle.Top, Height = 52, Padding = new Padding(16, 10, 0, 0) };
-        var sub = new Label { Text = "PC CLEANER", ForeColor = Silver, Dock = DockStyle.Top, Height = 26, Padding = new Padding(18, 0, 0, 0) };
-        side.Controls.Add(sub); side.Controls.Add(brand);
-        var navHost = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 16, 0, 0) };
-        side.Controls.Add(navHost); navHost.BringToFront();
-        foreach (var n in new[] { "Dashboard", "Deep Clean", "Startup", "Large Files", "History", "Settings" })
+        var side = new Panel { Dock = DockStyle.Left, Width = 212, BackColor = Theme.Surf };
+        var navHost = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 96, 0, 0), BackColor = Theme.Surf };
+        var foot = L(IsAdmin ? "● Administrator" : "● Standard user", 8.5f, IsAdmin ? Theme.Good : Theme.Muted, false, Theme.Surf);
+        foot.Dock = DockStyle.Bottom; foot.AutoSize = false; foot.Height = 34; foot.Padding = new Padding(22, 0, 0, 0); foot.TextAlign = ContentAlignment.MiddleLeft;
+        var brand = L("DREX", 24, Theme.Violet, true, Theme.Surf); brand.Location = new Point(20, 18);
+        var sub = L("PC CLEANER", 8.5f, Theme.Muted, true, Theme.Surf); sub.Location = new Point(24, 62);
+        side.Controls.Add(navHost); side.Controls.Add(foot); side.Controls.Add(brand); side.Controls.Add(sub);
+        foreach (var (k, g) in Items)
         {
-            var b = NavButton(n); _nav[n] = b; navHost.Controls.Add(b);
+            var n = new NavItem(k, g); var key = k;
+            n.Click += (_, _) => Go(key);
+            _nav[k] = n; navHost.Controls.Add(n);
         }
         Controls.Add(_content); Controls.Add(side);
 
-        _ramTimer.Tick += (_, _) => UpdateRam();
-        Shown += async (_, _) => { Show("Dashboard"); StartRamTimer(); await RunLaunchFlow(); };
+        _ramTimer.Tick += (_, _) => UpdateSystem();
+        Shown += async (_, _) => { Go("Dashboard"); StartRamTimer(); await RunLaunchFlow(); };
         FormClosing += (_, _) => { _cts?.Cancel(); _ramTimer.Stop(); _s.Save(); };
-        // Stop polling when minimized
-        Resize += (_, _) => { if (WindowState == FormWindowState.Minimized) _ramTimer.Stop(); else StartRamTimer(); };
-    }
-
-    Button NavButton(string name)
-    {
-        var b = new Button { Text = "  " + name, Width = 190, Height = 40, FlatStyle = FlatStyle.Flat, TextAlign = ContentAlignment.MiddleLeft, ForeColor = Silver, BackColor = Surf, Margin = new Padding(0), Cursor = Cursors.Hand };
-        b.FlatAppearance.BorderSize = 0; b.FlatAppearance.MouseOverBackColor = Surf2;
-        b.Click += (_, _) => Show(name);
-        return b;
-    }
-
-    void Show(string name)
-    {
-        foreach (var kv in _nav) { kv.Value.ForeColor = kv.Key == name ? Violet : Silver; kv.Value.BackColor = kv.Key == name ? Surf2 : Surf; }
-        if (!_pages.TryGetValue(name, out var page))
+        SizeChanged += (_, _) =>
         {
-            page = name switch { "Dashboard" => BuildDashboard(), "Deep Clean" => BuildDeep(), "Startup" => BuildStartup(), "Large Files" => BuildLarge(), "History" => BuildHistory(), _ => BuildSettings() };
-            page.Dock = DockStyle.Fill; _pages[name] = page; _content.Controls.Add(page);
-        }
-        page.BringToFront();
-        if (name == "History") ((TextBox)page.Controls.OfType<TextBox>().First()).Text = History.ReadAll();
+            bool min = WindowState == FormWindowState.Minimized;
+            if (min == _wasMin) return;
+            _wasMin = min;
+            if (min) _ramTimer.Stop(); else StartRamTimer();
+        };
     }
 
-    // ---------- helpers ----------
-    Label Lbl(string t, float size = 9.5f, Color? c = null, bool bold = false) =>
-        new() { Text = t, AutoSize = true, ForeColor = c ?? Txt, Font = new Font(bold ? "Segoe UI Semibold" : "Segoe UI", size) };
+    protected override void OnHandleCreated(EventArgs e) { base.OnHandleCreated(e); Native.DarkTitle(Handle); }
 
-    Button Btn(string t, bool primary = false)
-    {
-        var b = new Button { Text = t, AutoSize = true, MinimumSize = new Size(110, 34), FlatStyle = FlatStyle.Flat, BackColor = primary ? Violet : Surf2, ForeColor = primary ? Color.White : Txt, Cursor = Cursors.Hand, Padding = new Padding(8, 0, 8, 0) };
-        b.FlatAppearance.BorderColor = primary ? Violet : Surf2; b.FlatAppearance.MouseOverBackColor = primary ? ColorTranslator.FromHtml("#AE92FF") : ColorTranslator.FromHtml("#2A3040");
-        return b;
-    }
+    // ---------- shared helpers ----------
+    static Label L(string text, float size = 9.5f, Color? color = null, bool bold = false, Color? bg = null) =>
+        new() { Text = text, AutoSize = true, Font = Theme.F(size, bold), ForeColor = color ?? Theme.Silver, BackColor = bg ?? Theme.Bg, UseMnemonic = false };
 
-    ListView LV(params (string, int)[] cols)
+    static Control Header(string title, string sub)
     {
-        var lv = new ListView { View = View.Details, FullRowSelect = true, BackColor = Surf, ForeColor = Txt, BorderStyle = BorderStyle.None, Dock = DockStyle.Fill, HideSelection = false, GridLines = false };
-        foreach (var (n, w) in cols) lv.Columns.Add(n, w);
-        return lv;
-    }
-
-    Panel Page(string title, out FlowLayoutPanel bar)
-    {
-        var p = new Panel { Padding = new Padding(24), BackColor = Bg };
-        var h = Lbl(title, 18, Txt, true); h.Dock = DockStyle.Top; h.AutoSize = false; h.Height = 40;
-        bar = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 46, WrapContents = false, BackColor = Bg };
-        p.Controls.Add(bar); p.Controls.Add(h);
+        var p = new Panel { Height = 66, BackColor = Theme.Bg };
+        var t = L(title, 21, Theme.Txt, true); t.Location = new Point(0, 0);
+        var s = L(sub, 9.5f, Theme.Muted); s.Location = new Point(2, 40);
+        p.Controls.Add(t); p.Controls.Add(s);
         return p;
     }
 
-    void SetBusy(bool b)
+    static FlowLayoutPanel Bar(params Control[] cs)
     {
-        _busy = b;
-        if (_btnScan != null) { _btnScan.Enabled = !b; _btnClean.Enabled = !b; _btnCancel.Enabled = b; }
+        var f = new FlowLayoutPanel { AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = true, FlowDirection = FlowDirection.LeftToRight, BackColor = Theme.Bg, Margin = Padding.Empty };
+        f.Controls.AddRange(cs);
+        return f;
     }
 
+    static Label StatusLabel(string t) => new()
+    {
+        Text = t, AutoSize = false, Height = 26, ForeColor = Theme.Muted, BackColor = Theme.Bg, Font = Theme.F(9.5f),
+        AutoEllipsis = true, TextAlign = ContentAlignment.MiddleLeft, UseMnemonic = false
+    };
+
+    static Control Stack(params (Control c, bool fill)[] rows)
+    {
+        var t = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, BackColor = Theme.Bg, Padding = new Padding(30, 24, 30, 16) };
+        t.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        foreach (var (c, fill) in rows)
+        {
+            bool auto = c is FlowLayoutPanel fl && fl.AutoSize;
+            t.RowStyles.Add(fill ? new RowStyle(SizeType.Percent, 100) : auto ? new RowStyle(SizeType.AutoSize) : new RowStyle(SizeType.Absolute, c.Height + 12));
+            c.Dock = DockStyle.Fill; c.Margin = new Padding(0, 0, 0, 12);
+            t.Controls.Add(c);
+        }
+        return t;
+    }
+
+    static TextBox Input(string text, int w, string placeholder = "") => new()
+    {
+        Text = text, Width = w, BackColor = Theme.Surf2, ForeColor = Theme.Txt, BorderStyle = BorderStyle.FixedSingle,
+        Font = Theme.F(10f), Margin = new Padding(0, 9, 8, 0), PlaceholderText = placeholder
+    };
+
+    static NumericUpDown Num(int min, int max, int val, int w = 84) => new()
+    {
+        Minimum = min, Maximum = max, Value = Math.Clamp(val, min, max), Width = w, BackColor = Theme.Surf2, ForeColor = Theme.Txt,
+        BorderStyle = BorderStyle.FixedSingle, Font = Theme.F(10f), Margin = new Padding(0, 9, 8, 0)
+    };
+
+    static Label Cap(string t) { var l = L(t, 9.5f, Theme.Muted); l.Margin = new Padding(6, 14, 6, 0); return l; }
+
+    void Browse(TextBox tb) { using var d = new FolderBrowserDialog { SelectedPath = tb.Text }; if (d.ShowDialog(this) == DialogResult.OK) tb.Text = d.SelectedPath; }
+
+    bool Begin(out CancellationToken ct)
+    {
+        ct = default;
+        if (_busy) { MessageBox.Show(this, "Another task is still running. Wait for it or cancel it first.", "DREX PC CLEANER"); return false; }
+        _busy = true; _cts = new CancellationTokenSource(); ct = _cts.Token; return true;
+    }
+    void End() { _busy = false; _cts = null; }
+
     TimeSpan MinAge => TimeSpan.FromHours(Math.Max(0, _s.MinAgeHours));
+
+    // ---------- navigation ----------
+    void Go(string name)
+    {
+        foreach (var kv in _nav) kv.Value.Selected = kv.Key == name;
+        if (!_pages.TryGetValue(name, out var page))
+        {
+            page = name switch
+            {
+                "Dashboard" => BuildDashboard(), "Security" => BuildSecurity(), "Deep Clean" => BuildDeep(), "Startup" => BuildStartup(),
+                "Large Files" => BuildLarge(), "Duplicates" => BuildDupes(), "Disk Usage" => BuildDisk(), "Web Blocker" => BuildWeb(),
+                "Backup" => BuildBackup(), "History" => BuildHistory(), _ => BuildSettings()
+            };
+            page.Dock = DockStyle.Fill; _pages[name] = page; _content.Controls.Add(page);
+        }
+        page.BringToFront();
+        if (name == "History" && _historyBox != null) { _historyBox.Text = History.ReadAll(); _historyBox.SelectionStart = _historyBox.TextLength; _historyBox.ScrollToCaret(); }
+    }
 
     // ---------- Dashboard ----------
     Control BuildDashboard()
     {
-        var p = Page("Dashboard", out var bar);
-        _btnScan = Btn("Scan TEMP"); _btnClean = Btn("Clean safe files", true); _btnCancel = Btn("Cancel"); _btnCancel.Enabled = false;
+        var c1 = new Card { Accent = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
+        var c1cap = L("RECLAIMABLE  ·  SAFE TEMP", 8.5f, Theme.Muted, true, Theme.Surf); c1cap.Location = new Point(20, 16);
+        _lblReclaim = L("—", 30, Theme.Violet, true, Theme.Surf); _lblReclaim.Location = new Point(18, 38);
+        var c1sub = L("Only files older than your minimum age. Locked files are skipped.", 8.5f, Theme.Muted, false, Theme.Surf);
+        c1sub.MaximumSize = new Size(210, 0); c1sub.Location = new Point(20, 110);
+        c1.Controls.AddRange(new Control[] { c1cap, _lblReclaim, c1sub });
+
+        var c2 = new Card { Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
+        var c2cap = L("MEMORY", 8.5f, Theme.Muted, true, Theme.Surf); c2cap.Location = new Point(20, 16);
+        _ring = new Ring { Size = new Size(104, 104), Location = new Point(12, 44), Big = "—", Small = "used" };
+        _lblRamTxt = L("", 9.5f, Theme.Silver, false, Theme.Surf); _lblRamTxt.Location = new Point(124, 62); _lblRamTxt.MaximumSize = new Size(110, 0);
+        c2.Controls.AddRange(new Control[] { c2cap, _ring, _lblRamTxt });
+
+        var c3 = new Card { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        var c3cap = L("SYSTEM DRIVE", 8.5f, Theme.Muted, true, Theme.Surf); c3cap.Location = new Point(20, 16);
+        _lblDisk = L("—", 18, Theme.Txt, true, Theme.Surf); _lblDisk.Location = new Point(18, 42);
+        _diskBar = new DarkBar { Location = new Point(20, 98), Width = 180 };
+        _lblDiskSub = L("", 8.5f, Theme.Muted, false, Theme.Surf); _lblDiskSub.Location = new Point(20, 116);
+        c3.SizeChanged += (_, _) => _diskBar.Width = Math.Max(60, c3.Width - 40);
+        c3.Controls.AddRange(new Control[] { c3cap, _lblDisk, _diskBar, _lblDiskSub });
+
+        var cards = new TableLayoutPanel { ColumnCount = 3, RowCount = 1, Height = 176, BackColor = Theme.Bg };
+        for (int i = 0; i < 3; i++) cards.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.33f));
+        cards.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        cards.Controls.Add(c1); cards.Controls.Add(c2); cards.Controls.Add(c3);
+
+        _btnScan = new GButton("Scan TEMP"); _btnClean = new GButton("Clean safe files", true); _btnCancel = new GButton("Cancel") { Enabled = false };
         _btnScan.Click += async (_, _) => await ScanSafe();
         _btnClean.Click += async (_, _) => await CleanSafe();
         _btnCancel.Click += (_, _) => _cts?.Cancel();
-        bar.Controls.AddRange(new Control[] { _btnScan, _btnClean, _btnCancel });
-
-        _lblReclaim = Lbl("—", 30, Violet, true); _lblStatus = Lbl("Starting…", 10, Muted);
-        _lvCats = LV(("Location", 160), ("Files", 80), ("Size", 100), ("Path", 420));
-        _lblRam = Lbl("RAM: —", 10, Silver); _barRam = new ProgressBar { Width = 400, Height = 10, Style = ProgressBarStyle.Continuous };
-
-        var top = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 120, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        top.Controls.Add(Lbl("Reclaimable (safe TEMP)", 10, Muted)); top.Controls.Add(_lblReclaim); top.Controls.Add(_lblStatus);
-        var bottom = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 60, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        bottom.Controls.Add(_lblRam); bottom.Controls.Add(_barRam);
-        p.Controls.Add(_lvCats); p.Controls.Add(bottom); p.Controls.Add(top); _lvCats.BringToFront();
-        return p;
+        _lvCats = new DarkList(("Location", 170), ("Files", 80), ("Size", 110), ("Path", 500));
+        _lblStatus = StatusLabel("Starting…");
+        return Stack((Header("Dashboard", "Safe cleanup, system health and security at a glance."), false), (cards, false),
+            (Bar(_btnScan, _btnClean, _btnCancel), false), (_lvCats, true), (_lblStatus, false));
     }
+
+    void SetDashBusy(bool b) { _btnScan.Enabled = !b; _btnClean.Enabled = !b; _btnCancel.Enabled = b; }
 
     async Task RunLaunchFlow()
     {
         await ScanSafe();
-        if (_s.AutoClean && _lastCats.Count > 0) await CleanSafe(auto: true);
+        if (_s.AutoClean && _lastTotal > 0) await CleanSafe(true);
     }
 
-    async Task ScanSafe()
+    async Task ScanSafe(string? keepStatus = null)
     {
-        if (_busy) return; SetBusy(true); _cts = new(); var ct = _cts.Token; var age = MinAge;
-        _lblStatus.Text = "Scanning…"; _lvCats.Items.Clear();
+        if (!Begin(out var ct)) return;
+        SetDashBusy(true); _lblStatus.Text = "Scanning TEMP…"; _lvCats.Items.Clear();
         try
         {
-            var cats = Cleaner.SafeCategories(); long total = 0;
+            var cats = Cleaner.SafeCategories(); long total = 0; var age = MinAge;
             foreach (var c in cats)
             {
                 var r = await Task.Run(() => Cleaner.Scan(c, age, ct), ct);
                 total += r.Bytes;
-                _lvCats.Items.Add(new ListViewItem(new[] { c.Name, r.Files.ToString(), Fmt.Size(r.Bytes), c.Path }));
+                _lvCats.Items.Add(new ListViewItem(new[] { c.Name, r.Files.ToString("N0"), Fmt.Size(r.Bytes), string.Join("; ", c.Paths) }));
             }
-            _lastCats = cats; _lblReclaim.Text = Fmt.Size(total);
-            _lblStatus.Text = $"Scan complete. Files older than {_s.MinAgeHours} h only. Locked files are skipped at clean time.";
+            _lastCats = cats; _lastTotal = total; _lblReclaim.Text = Fmt.Size(total);
+            _lblStatus.Text = keepStatus ?? $"Scan complete. {Fmt.Size(total)} can be safely cleaned (files older than {_s.MinAgeHours} h).";
         }
         catch (OperationCanceledException) { _lblStatus.Text = "Scan cancelled."; }
         catch (Exception ex) { _lblStatus.Text = "Scan error: " + ex.Message; }
-        finally { SetBusy(false); }
+        finally { End(); SetDashBusy(false); }
     }
 
     async Task CleanSafe(bool auto = false)
     {
-        if (_busy) return; SetBusy(true); _cts = new(); var ct = _cts.Token; var age = MinAge;
-        _lblStatus.Text = auto ? "Auto Clean running…" : "Cleaning…";
+        if (_lastCats.Count == 0) { _lblStatus.Text = "Run a scan first."; return; }
+        if (!Begin(out var ct)) return;
+        SetDashBusy(true); _lblStatus.Text = auto ? "Auto Clean running…" : "Cleaning…";
+        string msg;
         try
         {
-            var total = new CleanResult();
+            var total = new CleanResult(); var age = MinAge;
             foreach (var c in _lastCats)
             {
                 var r = await Task.Run(() => Cleaner.Clean(c, age, ct), ct);
                 total.Bytes += r.Bytes; total.Deleted += r.Deleted; total.Skipped += r.Skipped; total.Errors += r.Errors;
             }
-            var msg = $"{(auto ? "Auto" : "Manual")} clean: freed {Fmt.Size(total.Bytes)}, {total.Deleted} deleted, {total.Skipped} skipped (locked/in use), {total.Errors} errors";
-            History.Add(msg); _lblStatus.Text = msg; _lblReclaim.Text = "0 B";
+            msg = $"{(auto ? "Auto" : "Manual")} clean: freed {Fmt.Size(total.Bytes)} · {total.Deleted:N0} deleted · {total.Skipped:N0} skipped (in use) · {total.Errors} errors";
         }
-        catch (OperationCanceledException) { _lblStatus.Text = "Cleanup cancelled (partial results are in History)."; History.Add("Cleanup cancelled"); }
-        catch (Exception ex) { _lblStatus.Text = "Cleanup error: " + ex.Message; History.Add("Cleanup error: " + ex.Message); }
-        finally { SetBusy(false); }
-        if (!_busy) { _busy = false; await ScanSafeQuiet(); }
-    }
-
-    async Task ScanSafeQuiet()
-    {
-        // Refresh numbers after cleaning, preserving the cleanup report text.
-        var keep = _lblStatus.Text; await ScanSafe(); _lblStatus.Text = keep;
+        catch (OperationCanceledException) { msg = "Cleanup cancelled (partial results are in History)."; }
+        catch (Exception ex) { msg = "Cleanup error: " + ex.Message; }
+        History.Add(msg);
+        End(); SetDashBusy(false);
+        await ScanSafe(msg);
     }
 
     // ---------- Deep Clean ----------
     Control BuildDeep()
     {
-        var p = Page("Deep Clean", out var bar);
-        var lv = LV(("Category", 200), ("Files", 70), ("Size", 100), ("Path", 420)); lv.CheckBoxes = true;
-        var scan = Btn("Analyze"); var clean = Btn("Clean selected", true); var cancel = Btn("Cancel"); cancel.Enabled = false;
-        var note = Lbl("Nothing here is deleted without your confirmation. Files in use are skipped.", 9, Muted); note.Dock = DockStyle.Bottom;
-        bar.Controls.AddRange(new Control[] { scan, clean, cancel });
-        var cats = Cleaner.DeepCategories(); var map = new Dictionary<ListViewItem, Category>();
+        var analyze = new GButton("Analyze", true); var clean = new GButton("Clean selected") { Enabled = false }; var cancel = new GButton("Cancel") { Enabled = false };
+        var host = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Theme.Bg };
+        Native.DarkScroll(host);
+        var status = StatusLabel("Click Analyze to see what can be cleaned. Nothing is deleted until you confirm.");
+        var rows = new List<(Toggle t, Category c)>();
+        void Fit() { foreach (Control c in host.Controls) c.Width = Math.Max(300, host.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 6); }
+        host.SizeChanged += (_, _) => Fit();
 
-        scan.Click += async (_, _) =>
+        analyze.Click += async (_, _) =>
         {
-            if (_busy) return; SetBusy(true); cancel.Enabled = true; _cts = new(); var ct = _cts.Token; lv.Items.Clear(); map.Clear();
+            if (!Begin(out var ct)) return;
+            analyze.Enabled = false; clean.Enabled = false; cancel.Enabled = true; host.Controls.Clear(); rows.Clear(); status.Text = "Analyzing…";
+            long total = 0;
             try
             {
-                foreach (var c in cats)
+                foreach (var c in Cleaner.DeepCategories())
                 {
                     var r = await Task.Run(() => Cleaner.Scan(c, TimeSpan.FromHours(1), ct), ct);
-                    var it = new ListViewItem(new[] { c.Name, c.Recycle ? "—" : r.Files.ToString(), Fmt.Size(r.Bytes), c.Recycle ? "(shell)" : c.Path });
-                    lv.Items.Add(it); map[it] = c;
+                    total += r.Bytes;
+                    bool pre = r.Bytes > 0 && !c.Recycle && !c.Name.StartsWith("Recent", StringComparison.Ordinal);
+                    var row = MakeRow(c, r, pre, out var tg);
+                    rows.Add((tg, c)); host.Controls.Add(row); Fit();
                 }
+                status.Text = $"Analysis complete — {Fmt.Size(total)} found. Close browsers first for best results.";
             }
-            catch (OperationCanceledException) { } catch (Exception ex) { MessageBox.Show(ex.Message); }
-            finally { SetBusy(false); cancel.Enabled = false; }
+            catch (OperationCanceledException) { status.Text = "Cancelled."; }
+            catch (Exception ex) { status.Text = "Error: " + ex.Message; }
+            finally { End(); analyze.Enabled = true; clean.Enabled = rows.Count > 0; cancel.Enabled = false; }
         };
+
         clean.Click += async (_, _) =>
         {
-            if (_busy) return;
-            var sel = lv.CheckedItems.Cast<ListViewItem>().ToList();
-            if (sel.Count == 0) { MessageBox.Show("Select at least one category."); return; }
-            if (_s.ConfirmDeepClean && MessageBox.Show("Permanently delete the selected categories?\n\n" + string.Join("\n", sel.Select(i => $"• {i.Text} ({i.SubItems[2].Text})")),
+            var sel = rows.Where(x => x.t.Checked).ToList();
+            if (sel.Count == 0) { MessageBox.Show(this, "Select at least one category.", "DREX PC CLEANER"); return; }
+            if (_s.ConfirmDeepClean && MessageBox.Show(this, "Permanently delete the selected items?\n\n" + string.Join("\n", sel.Select(x => "• " + x.c.Name)),
                 "Confirm Deep Clean", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
-            SetBusy(true); cancel.Enabled = true; _cts = new(); var ct = _cts.Token; long freed = 0;
+            if (!Begin(out var ct)) return;
+            analyze.Enabled = false; clean.Enabled = false; cancel.Enabled = true; long freed = 0; status.Text = "Cleaning…";
             try
             {
-                foreach (var it in sel) { var c = map[it]; var r = await Task.Run(() => Cleaner.Clean(c, TimeSpan.FromHours(1), ct), ct); freed += r.Bytes;
-                    History.Add($"Deep clean [{c.Name}]: freed {Fmt.Size(r.Bytes)}, {r.Deleted} deleted, {r.Skipped} skipped, {r.Errors} errors"); }
-                MessageBox.Show($"Deep Clean finished. Freed {Fmt.Size(freed)}.");
+                foreach (var (t, c) in sel)
+                {
+                    var r = await Task.Run(() => Cleaner.Clean(c, TimeSpan.FromHours(1), ct), ct);
+                    freed += r.Bytes;
+                    History.Add($"Deep clean [{c.Name}]: freed {Fmt.Size(r.Bytes)}, {r.Deleted} deleted, {r.Skipped} skipped, {r.Errors} errors");
+                }
+                status.Text = $"Deep Clean finished — freed {Fmt.Size(freed)}. Click Analyze to refresh.";
             }
-            catch (OperationCanceledException) { History.Add("Deep clean cancelled"); }
-            catch (Exception ex) { MessageBox.Show(ex.Message); }
-            finally { SetBusy(false); cancel.Enabled = false; }
-        };
-        cancel.Click += (_, _) => _cts?.Cancel();
-        p.Controls.Add(lv); p.Controls.Add(note); lv.BringToFront();
-        return p;
-    }
-
-    // ---------- Startup ----------
-    Control BuildStartup()
-    {
-        var p = Page("Startup", out var bar);
-        var lv = LV(("Name", 180), ("Publisher", 160), ("Location", 140), ("Note", 190), ("Command", 400));
-        var refresh = Btn("Refresh"); var open = Btn("Open Startup Apps settings", true);
-        bar.Controls.AddRange(new Control[] { refresh, open });
-        void Load()
-        {
-            lv.Items.Clear();
-            foreach (var e in StartupScanner.Read()) { var it = new ListViewItem(new[] { e.Name, e.Publisher, e.Location, e.Note, e.Command }); if (e.Note != "") it.ForeColor = Violet; lv.Items.Add(it); }
-        }
-        refresh.Click += (_, _) => Load(); open.Click += (_, _) => StartupScanner.OpenSettings();
-        Load();
-        p.Controls.Add(lv); lv.BringToFront();
-        return p;
-    }
-
-    // ---------- Large Files ----------
-    Control BuildLarge()
-    {
-        var p = Page("Large Files", out var bar);
-        var path = new TextBox { Width = 260, BackColor = Surf2, ForeColor = Txt, BorderStyle = BorderStyle.FixedSingle, Text = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), Margin = new Padding(3, 7, 3, 3) };
-        var browse = Btn("Browse…");
-        var mb = new NumericUpDown { Minimum = 1, Maximum = 1000000, Value = Math.Max(1, _s.LargeFileMb), Width = 80, BackColor = Surf2, ForeColor = Txt, Margin = new Padding(3, 7, 3, 3) };
-        var scan = Btn("Scan", true); var cancel = Btn("Cancel"); cancel.Enabled = false; var show = Btn("Open location");
-        bar.Controls.AddRange(new Control[] { path, browse, Lbl("  Min MB:", 9.5f, Muted), mb, scan, cancel, show });
-        var lv = LV(("Name", 220), ("Size", 100), ("Path", 520)); var status = Lbl("", 9, Muted); status.Dock = DockStyle.Bottom;
-        var items = new List<BigFile>();
-
-        browse.Click += (_, _) => { using var d = new FolderBrowserDialog { SelectedPath = path.Text }; if (d.ShowDialog() == DialogResult.OK) path.Text = d.SelectedPath; };
-        scan.Click += async (_, _) =>
-        {
-            if (!Directory.Exists(path.Text)) { MessageBox.Show("Folder not found."); return; }
-            if (_busy) return; SetBusy(true); scan.Enabled = false; cancel.Enabled = true; _cts = new(); var ct = _cts.Token;
-            _s.LargeFileMb = (int)mb.Value; long min = (long)mb.Value * 1024 * 1024; items.Clear(); lv.Items.Clear(); status.Text = "Scanning…";
-            var sync = SynchronizationContext.Current!; var pending = new System.Collections.Concurrent.ConcurrentQueue<BigFile>();
-            using var tick = new System.Windows.Forms.Timer { Interval = 500 };
-            tick.Tick += (_, _) => Drain();
-            void Drain() { while (pending.TryDequeue(out var f)) items.Add(f); }
-            tick.Start();
-            try { await Task.Run(() => LargeFileFinder.Scan(path.Text, min, f => pending.Enqueue(f), ct), ct); status.Text = "Scan complete."; }
-            catch (OperationCanceledException) { status.Text = "Scan cancelled."; }
+            catch (OperationCanceledException) { status.Text = $"Cancelled after freeing {Fmt.Size(freed)}."; History.Add("Deep clean cancelled"); }
             catch (Exception ex) { status.Text = "Error: " + ex.Message; }
-            finally { tick.Stop(); Drain(); SetBusy(false); scan.Enabled = true; cancel.Enabled = false; }
-            lv.BeginUpdate();
-            foreach (var f in items.OrderByDescending(x => x.Size)) lv.Items.Add(new ListViewItem(new[] { f.Name, Fmt.Size(f.Size), f.Path }));
-            lv.EndUpdate(); status.Text += $" {items.Count} file(s) found.";
+            finally { End(); analyze.Enabled = true; clean.Enabled = true; cancel.Enabled = false; }
         };
         cancel.Click += (_, _) => _cts?.Cancel();
-        show.Click += (_, _) => { if (lv.SelectedItems.Count > 0) try { Process.Start("explorer.exe", $"/select,\"{lv.SelectedItems[0].SubItems[2].Text}\""); } catch { } };
-        p.Controls.Add(lv); p.Controls.Add(status); lv.BringToFront();
-        return p;
+        return Stack((Header("Deep Clean", "Browser caches, thumbnails, crash dumps, privacy traces and the Recycle Bin."), false),
+            (Bar(analyze, clean, cancel), false), (host, true), (status, false));
+    }
+
+    static Control MakeRow(Category c, ScanResult r, bool pre, out Toggle tg)
+    {
+        var row = new Card { Height = 62, Margin = new Padding(0, 0, 0, 8) };
+        tg = new Toggle { Location = new Point(18, 17) };
+        tg.Checked = pre;
+        var name = L(c.Name, 10.5f, Theme.Txt, true, Theme.Surf); name.Location = new Point(82, 10);
+        string where = c.Recycle ? "Windows Recycle Bin" : string.Join("; ", c.Paths.Take(1)) + (c.Paths.Length > 1 ? $"  (+{c.Paths.Length - 1} more)" : "");
+        var info = L(where, 8.5f, Theme.Muted, false, Theme.Surf); info.Location = new Point(82, 33); info.MaximumSize = new Size(560, 0);
+        var size = L(Fmt.Size(r.Bytes), 12, r.Bytes > 0 ? Theme.Violet : Theme.Muted, true, Theme.Surf); size.Location = new Point(400, 18);
+        row.SizeChanged += (_, _) => size.Left = row.Width - size.Width - 22;
+        row.Controls.AddRange(new Control[] { tg, name, info, size });
+        return row;
     }
 
     // ---------- History ----------
     Control BuildHistory()
     {
-        var p = Page("History", out _);
-        var tb = new TextBox { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Surf, ForeColor = Silver, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9.5f) };
-        p.Controls.Add(tb); tb.BringToFront();
-        return p;
+        _historyBox = new TextBox
+        {
+            Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, BackColor = Theme.Surf, ForeColor = Theme.Silver,
+            BorderStyle = BorderStyle.None, Font = new Font("Consolas", 10f), Text = History.ReadAll()
+        };
+        Native.DarkScroll(_historyBox);
+        var refresh = new GButton("Refresh");
+        refresh.Click += (_, _) => { _historyBox.Text = History.ReadAll(); };
+        var open = new GButton("Open log folder");
+        open.Click += (_, _) => { try { Directory.CreateDirectory(Settings.DataDir); Process.Start("explorer.exe", Settings.DataDir); } catch { } };
+        return Stack((Header("History", "Every cleanup is logged here. The log is small and rotates automatically."), false), (Bar(refresh, open), false), (_historyBox, true));
     }
 
     // ---------- Settings ----------
     Control BuildSettings()
     {
-        var p = Page("Settings", out _);
-        var f = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
-        CheckBox Chk(string t, bool v, Action<bool> set) { var c = new CheckBox { Text = t, Checked = v, AutoSize = true, ForeColor = Txt, Margin = new Padding(3, 8, 3, 8) }; c.CheckedChanged += (_, _) => { set(c.Checked); _s.Save(); }; return c; }
-        f.Controls.Add(Chk("Auto Clean on launch", _s.AutoClean, v => _s.AutoClean = v));
-        f.Controls.Add(Chk("Require confirmation before Deep Clean", _s.ConfirmDeepClean, v => _s.ConfirmDeepClean = v));
-        f.Controls.Add(Chk("RAM monitoring (every 5 s)", _s.RamMonitoring, v => { _s.RamMonitoring = v; StartRamTimer(); }));
-        f.Controls.Add(Chk("Launch with Windows (current user)", IsStartupOn(), SetStartup));
-        var age = new NumericUpDown { Minimum = 0, Maximum = 720, Value = Math.Clamp(_s.MinAgeHours, 0, 720), Width = 80, BackColor = Surf2, ForeColor = Txt };
+        var flow = new FlowLayoutPanel { FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true, BackColor = Theme.Bg };
+        Native.DarkScroll(flow);
+        void Fit() { foreach (Control c in flow.Controls) c.Width = Math.Max(300, flow.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 6); }
+        flow.SizeChanged += (_, _) => Fit();
+
+        Control Row(string title, string desc, Control right)
+        {
+            var card = new Card { Height = 68, Margin = new Padding(0, 0, 0, 10) };
+            var t = L(title, 10.5f, Theme.Txt, true, Theme.Surf); t.Location = new Point(20, 12);
+            var d = L(desc, 8.5f, Theme.Muted, false, Theme.Surf); d.Location = new Point(20, 36);
+            right.Top = (card.Height - right.Height) / 2;
+            card.SizeChanged += (_, _) => right.Left = card.Width - right.Width - 22;
+            card.Controls.AddRange(new Control[] { t, d, right });
+            return card;
+        }
+        Toggle Tg(bool v, Action<bool> set) { var t = new Toggle(); t.Checked = v; t.CheckedChanged += (_, _) => { set(t.Checked); _s.Save(); }; return t; }
+
+        flow.Controls.Add(Row("Auto Clean on launch", "Scan safe TEMP locations when DREX starts and clean them automatically.", Tg(_s.AutoClean, v => _s.AutoClean = v)));
+        flow.Controls.Add(Row("Confirm before Deep Clean", "Always ask before deleting anything outside the default safe TEMP locations.", Tg(_s.ConfirmDeepClean, v => _s.ConfirmDeepClean = v)));
+        flow.Controls.Add(Row("RAM monitoring", "Refresh memory and disk figures every 5 seconds. Paused when minimized.", Tg(_s.RamMonitoring, v => { _s.RamMonitoring = v; StartRamTimer(); })));
+        flow.Controls.Add(Row("Launch with Windows", "Adds a per-user startup entry. No service or scheduled task is created.", Tg(IsStartupOn(), SetStartup)));
+        var age = Num(0, 720, _s.MinAgeHours);
         age.ValueChanged += (_, _) => { _s.MinAgeHours = (int)age.Value; _s.Save(); };
-        var row = new FlowLayoutPanel { AutoSize = true }; row.Controls.Add(Lbl("Minimum file age (hours): ", 9.5f, Silver)); row.Controls.Add(age);
-        f.Controls.Add(row);
-        f.Controls.Add(Lbl("Large-file threshold is set on the Large Files page and remembered.", 9, Muted));
-        p.Controls.Add(f); f.BringToFront();
-        return p;
+        flow.Controls.Add(Row("Minimum file age (hours)", "Recently modified files are never touched by the safe cleaner.", age));
+        if (!IsAdmin)
+        {
+            var adm = new GButton("Restart as admin");
+            adm.Click += (_, _) => RestartAsAdmin();
+            flow.Controls.Add(Row("Administrator mode", "Needed for Windows TEMP, the Website Blocker and Defender updates.", adm));
+        }
+        return Stack((Header("Settings", "Everything is saved locally in your user profile."), false), (flow, true));
+    }
+
+    void RestartAsAdmin()
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(Environment.ProcessPath ?? Application.ExecutablePath, "--elevated") { UseShellExecute = true, Verb = "runas" });
+            Close();
+        }
+        catch (System.ComponentModel.Win32Exception) { }
     }
 
     const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -319,24 +383,34 @@ public sealed class MainForm : Form
         try
         {
             using var k = Registry.CurrentUser.OpenSubKey(RunKey, true); if (k == null) return;
-            if (on) k.SetValue("DREX_PC_CLEANER", $"\"{Application.ExecutablePath}\""); else k.DeleteValue("DREX_PC_CLEANER", false);
+            if (on) k.SetValue("DREX_PC_CLEANER", $"\"{Environment.ProcessPath ?? Application.ExecutablePath}\""); else k.DeleteValue("DREX_PC_CLEANER", false);
         }
         catch (Exception ex) { MessageBox.Show("Could not change startup setting: " + ex.Message); }
     }
 
-    // ---------- RAM ----------
+    // ---------- RAM / disk (5 s tick, only while visible) ----------
     void StartRamTimer()
     {
-        if (_s.RamMonitoring && WindowState != FormWindowState.Minimized) { UpdateRam(); _ramTimer.Start(); }
-        else { _ramTimer.Stop(); if (_lblRam != null) _lblRam.Text = "RAM monitoring is off"; }
+        if (_s.RamMonitoring && WindowState != FormWindowState.Minimized) { UpdateSystem(); _ramTimer.Start(); }
+        else { _ramTimer.Stop(); if (_ring != null) { _ring.Big = "—"; _ring.Small = "paused"; } }
     }
 
-    void UpdateRam()
+    void UpdateSystem()
     {
-        if (_lblRam == null) return;
+        if (_ring == null) return;
         var (total, avail, pct) = Native.Memory();
-        if (total == 0) { _lblRam.Text = "RAM: unavailable"; return; }
-        _lblRam.Text = $"RAM  total {Fmt.Size((long)total)}   used {Fmt.Size((long)(total - avail))}   available {Fmt.Size((long)avail)}   ({pct}%)";
-        _barRam.Value = (int)Math.Min(100, pct);
+        if (total > 0)
+        {
+            _ring.Value = pct; _ring.Big = pct + "%"; _ring.Small = "used";
+            _lblRamTxt.Text = $"{Fmt.Size((long)(total - avail))}\nof {Fmt.Size((long)total)}\n{Fmt.Size((long)avail)} free";
+        }
+        try
+        {
+            var d = new DriveInfo(Path.GetPathRoot(Environment.SystemDirectory)!);
+            long used = d.TotalSize - d.AvailableFreeSpace; int p = (int)(used * 100 / Math.Max(1, d.TotalSize));
+            _lblDisk.Text = Fmt.Size(d.AvailableFreeSpace) + " free"; _diskBar.Value = p;
+            _lblDiskSub.Text = $"{d.Name}  ·  {p}% of {Fmt.Size(d.TotalSize)} used";
+        }
+        catch { }
     }
 }
