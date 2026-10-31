@@ -56,6 +56,13 @@ jobs:
         shell: pwsh
         run: dotnet publish "$env:PROJ" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out/self-contained
 
+      - name: Rename EXEs for release
+        shell: pwsh
+        run: |
+          Copy-Item out/framework-dependent/DREX_PC_CLEANER.exe out/DREX_PC_CLEANER_framework-dependent.exe
+          Copy-Item out/self-contained/DREX_PC_CLEANER.exe out/DREX_PC_CLEANER_self-contained.exe
+          Write-Host "Files copied and renamed for release"
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -82,8 +89,8 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
-            out/framework-dependent/DREX_PC_CLEANER.exe
-            out/self-contained/DREX_PC_CLEANER.exe
+            out/DREX_PC_CLEANER_framework-dependent.exe
+            out/DREX_PC_CLEANER_self-contained.exe
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,7 +115,7 @@ jobs:
           prerelease: true
           make_latest: false
           files: |
-            out/framework-dependent/DREX_PC_CLEANER.exe
-            out/self-contained/DREX_PC_CLEANER.exe
+            out/DREX_PC_CLEANER_framework-dependent.exe
+            out/DREX_PC_CLEANER_self-contained.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
