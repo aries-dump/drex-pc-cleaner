@@ -398,7 +398,7 @@ public sealed partial class MainForm : Form
         try
         {
             Process.Start(new ProcessStartInfo(Environment.ProcessPath ?? Application.ExecutablePath, "--elevated") { UseShellExecute = true, Verb = "runas" });
-            Close();
+            ExitApp();   // really exit (not hide to tray) so the elevated copy can take over
         }
         catch (System.ComponentModel.Win32Exception) { }
     }
