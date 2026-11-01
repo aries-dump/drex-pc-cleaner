@@ -1,0 +1,61 @@
+# Build outputs
+bin/
+obj/
+out/
+dist/
+
+# User secrets and environment files
+.env
+.env.local
+.env.*.local
+*.secrets
+*.credentials
+
+# IDE and editor files
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build artifacts
+*.dll
+*.exe
+*.pdb
+*.xml
+*.log
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Rider/ReSharper
+_ReSharper*/
+*.DotSettings.user
+
+# Test results
+TestResults/
+*.trx
+*.coverage
+
+# NuGet
+packages/
+*.nupkg
+.nuget/
+
+# User-specific settings
+*.local
+*.local.config
+
+# Credential files
+*.pfx
+*.p12
+*.key
+*.crt
+*.pem
+
+# Google OAuth credentials
+client_secret*.json
+google_credentials.json
