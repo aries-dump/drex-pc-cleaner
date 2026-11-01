@@ -11,7 +11,7 @@ public sealed class ScanReport { public List<Detection> Found = new(); public in
 
 // Compact hash storage: sorted ulong[] array (2 ulongs per hash) with binary search.
 // Much more memory-efficient than HashSet<(ulong, ulong)> - roughly 16 bytes per entry vs ~40-60.
-public sealed class HashSetCompact
+public sealed class HashSetCompact : IEnumerable<(ulong hi, ulong lo)>
 {
     readonly ulong[] _data; // pairs: _data[2*i] = hi, _data[2*i+1] = lo
     public int Count => _data.Length / 2;
