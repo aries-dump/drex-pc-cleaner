@@ -295,7 +295,7 @@ public sealed partial class MainForm : Form
                 status.Text = $"Analysis complete — {Fmt.Size(total)} found. Close browsers first for best results.";
             }
             catch (OperationCanceledException) { status.Text = "Analysis cancelled."; }
-            catch (Exception ex) { status.Text = "Analysis failed. Check folder access and try again."; }
+            catch (Exception) { status.Text = "Analysis failed. Check folder access and try again."; }
             finally { End(); analyze.Enabled = true; clean.Enabled = rows.Count > 0; cancel.Enabled = false; }
         };
 
@@ -318,7 +318,7 @@ public sealed partial class MainForm : Form
                 status.Text = $"Deep Clean finished — freed {Fmt.Size(freed)}. Click Analyze to refresh.";
             }
             catch (OperationCanceledException) { status.Text = $"Cancelled after freeing {Fmt.Size(freed)}."; History.Add("Deep clean cancelled"); }
-            catch (Exception ex) { status.Text = "Clean failed. Some files may be in use — close apps and retry."; }
+            catch (Exception) { status.Text = "Clean failed. Some files may be in use — close apps and retry."; }
             finally { End(); analyze.Enabled = true; clean.Enabled = true; cancel.Enabled = false; }
         };
         cancel.Click += (_, _) => _cts?.Cancel();

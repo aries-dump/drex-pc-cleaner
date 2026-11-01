@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -46,6 +48,16 @@ public sealed class HashSetCompact
         }
         return new HashSetCompact(data);
     }
+
+    public IEnumerator<(ulong hi, ulong lo)> GetEnumerator()
+    {
+        for (int i = 0; i < Count; i++)
+        {
+            yield return (_data[i * 2], _data[i * 2 + 1]);
+        }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 }
 
 // DREX's own light scanner. It is NOT a full antivirus: it only detects (1) the standard EICAR test file and
@@ -90,15 +102,7 @@ public static class HashScanner
     // Appends only valid 64-hex SHA-256 values from the chosen text file.
     public static int Import(string file)
     {
-        var existing = Load();
-        var existingSet = new HashSet<(ulong hi, ulong lo)>();
-        foreach (var item in existing)
-        {
-            // We need to iterate, but HashSetCompact doesn't expose an enumerator
-            // For import, we'll just load from file again
-        }
-
-        // Simpler approach: load all existing hashes from file
+        // Load existing keys from file directly
         var existingKeys = new List<(ulong hi, ulong lo)>();
         try
         {

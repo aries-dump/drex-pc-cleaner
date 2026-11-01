@@ -141,7 +141,7 @@ public sealed partial class MainForm : Form
                 list.EndUpdate();
                 status.Text = rows.Count == 0 ? "Windows Defender reports zero threats. Your system is clean." : $"{rows.Count} detection(s) in Defender history.";
             }
-            catch (Exception ex) { status.Text = "Unable to read Defender history. Try running as administrator."; }
+            catch (Exception) { status.Text = "Unable to read Defender history. Try running as administrator."; }
             finally { refresh.Enabled = true; }
         }
         refresh.Click += async (_, _) => await Load();
@@ -216,7 +216,7 @@ public sealed partial class MainForm : Form
             string end;
             try { await Task.Run(() => LargeFileFinder.Scan(path.Text, min, f => pending.Enqueue(f), ct), ct); end = "Scan complete."; }
             catch (OperationCanceledException) { end = "Scan cancelled."; }
-            catch (Exception ex) { end = "Scan failed. Check folder permissions."; }
+            catch (Exception) { end = "Scan failed. Check folder permissions."; }
             tick.Stop(); while (pending.TryDequeue(out var f)) found.Add(f);
             list.BeginUpdate();
             foreach (var f in found.OrderByDescending(x => x.Size)) list.Items.Add(new ListViewItem(new[] { f.Name, Fmt.Size(f.Size), f.Path }));
@@ -268,7 +268,7 @@ public sealed partial class MainForm : Form
                 end = groups.Count == 0 ? "Nothing to clean — your folder is already tidy." : $"{groups.Count} duplicate group(s) — up to {Fmt.Size(waste)} reclaimable. Use “Select extra copies”, review, then move to Recycle Bin.";
             }
             catch (OperationCanceledException) { end = "Scan cancelled."; }
-            catch (Exception ex) { end = "Duplicate scan failed. Check folder access."; }
+            catch (Exception) { end = "Duplicate scan failed. Check folder access."; }
             status.Text = end; End(); scan.Enabled = true; cancel.Enabled = false; del.Enabled = list.Items.Count > 0;
         };
         cancel.Click += (_, _) => _cts?.Cancel();
@@ -332,7 +332,7 @@ public sealed partial class MainForm : Form
                 end = "Done.";
             }
             catch (OperationCanceledException) { end = "Cancelled (showing what was measured)."; }
-            catch (Exception ex) { end = "Analysis failed. Check folder permissions."; }
+            catch (Exception) { end = "Analysis failed. Check folder permissions."; }
             long total = rows.Sum(r => r.size);
             list.BeginUpdate();
             foreach (var r in rows.OrderByDescending(x => x.size))

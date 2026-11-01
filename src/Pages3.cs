@@ -44,7 +44,7 @@ public sealed partial class MainForm : Form
                 History.Add($"Scanner: imported {added} hashes");
                 status.Text = $"Imported {added:N0} new hash(es). Total {_hashes.Count:N0} (limit 1,000,000).";
             }
-            catch (Exception ex) { status.Text = "Import failed. Ensure the file is a valid text/CSV hash list."; }
+            catch (Exception) { status.Text = "Import failed. Ensure the file is a valid text/CSV hash list."; }
         };
         test.Click += (_, _) => status.Text = HashScanner.SelfTest();
 
@@ -64,7 +64,7 @@ public sealed partial class MainForm : Form
                 History.Add($"Scanner: {rep.Scanned} files, {rep.Found.Count} detections in {root}");
             }
             catch (OperationCanceledException) { status.Text = "Scan cancelled."; }
-            catch (Exception ex) { status.Text = "Scan failed. Check folder permissions and try again."; }
+            catch (Exception) { status.Text = "Scan failed. Check folder permissions and try again."; }
             End(); scan.Enabled = true; cancel.Enabled = false;
         };
         cancel.Click += (_, _) => _cts?.Cancel();
