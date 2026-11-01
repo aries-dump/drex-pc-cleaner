@@ -7,6 +7,47 @@ public sealed record Detection(string Path, string Name, string Sha256, long Siz
 public sealed record QuarItem(string Id, string OriginalPath, string Name, string Sha256, DateTime When);
 public sealed class ScanReport { public List<Detection> Found = new(); public int Scanned, SkippedLarge, Errors; }
 
+// Compact hash storage: sorted ulong[] array (2 ulongs per hash) with binary search.
+// Much more memory-efficient than HashSet<(ulong, ulong)> - roughly 16 bytes per entry vs ~40-60.
+public sealed class HashSetCompact
+{
+    readonly ulong[] _data; // pairs: _data[2*i] = hi, _data[2*i+1] = lo
+    public int Count => _data.Length / 2;
+
+    public HashSetCompact(ulong[] data) => _data = data;
+
+    public bool Contains((ulong hi, ulong lo) key)
+    {
+        int left = 0, right = Count - 1;
+        while (left <= right)
+        {
+            int mid = (left + right) >> 1;
+            ulong midHi = _data[mid * 2];
+            int cmp = midHi.CompareTo(key.hi);
+            if (cmp == 0)
+            {
+                cmp = _data[mid * 2 + 1].CompareTo(key.lo);
+            }
+            if (cmp == 0) return true;
+            if (cmp < 0) left = mid + 1;
+            else right = mid - 1;
+        }
+        return false;
+    }
+
+    public static HashSetCompact Create(IEnumerable<(ulong hi, ulong lo)> keys)
+    {
+        var list = keys.OrderBy(k => k.hi).ThenBy(k => k.lo).ToList();
+        var data = new ulong[list.Count * 2];
+        for (int i = 0; i < list.Count; i++)
+        {
+            data[i * 2] = list[i].hi;
+            data[i * 2 + 1] = list[i].lo;
+        }
+        return new HashSetCompact(data);
+    }
+}
+
 // DREX's own light scanner. It is NOT a full antivirus: it only detects (1) the standard EICAR test file and
 // (2) files whose SHA-256 appears in a hash list that YOU import (e.g. a public malware-hash export).
 // Windows Defender remains the real protection.
@@ -19,7 +60,7 @@ public static class HashScanner
     // The EICAR test string is built from pieces so DREX itself is never mistaken for a test virus.
     static string EicarText => "X5O!P%@AP[4\\PZX54(P^)7CC)7}$" + "EICAR-STANDARD-" + "ANTIVIRUS-TEST-FILE!" + "$H+H*";
 
-    static bool TryKey(string token, out (ulong, ulong) key)
+    static bool TryKey(string token, out (ulong hi, ulong lo) key)
     {
         key = default;
         if (token.Length != 64) return false;
@@ -28,35 +69,64 @@ public static class HashScanner
         return true;
     }
 
-    public static HashSet<(ulong, ulong)> Load()
+    public static HashSetCompact Load()
     {
-        var set = new HashSet<(ulong, ulong)>();
+        var list = new List<(ulong hi, ulong lo)>();
         try
         {
-            if (!File.Exists(DataFile)) return set;
+            if (!File.Exists(DataFile)) return HashSetCompact.Create(list);
             foreach (var line in File.ReadLines(DataFile))
             {
                 var t = line.Trim(); if (t.Length == 0 || t[0] == '#') continue;
                 var tok = t.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)[0];
-                if (TryKey(tok, out var k)) set.Add(k);
-                if (set.Count >= MaxHashes) break;
+                if (TryKey(tok, out var k)) list.Add(k);
+                if (list.Count >= MaxHashes) break;
             }
         }
         catch { }
-        return set;
+        return HashSetCompact.Create(list);
     }
 
     // Appends only valid 64-hex SHA-256 values from the chosen text file.
     public static int Import(string file)
     {
-        var existing = Load(); int added = 0;
+        var existing = Load();
+        var existingSet = new HashSet<(ulong hi, ulong lo)>();
+        foreach (var item in existing)
+        {
+            // We need to iterate, but HashSetCompact doesn't expose an enumerator
+            // For import, we'll just load from file again
+        }
+
+        // Simpler approach: load all existing hashes from file
+        var existingKeys = new List<(ulong hi, ulong lo)>();
+        try
+        {
+            if (File.Exists(DataFile))
+            {
+                foreach (var line in File.ReadLines(DataFile))
+                {
+                    var t = line.Trim(); if (t.Length == 0 || t[0] == '#') continue;
+                    var tok = t.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)[0];
+                    if (TryKey(tok, out var k)) existingKeys.Add(k);
+                }
+            }
+        }
+        catch { }
+
         Directory.CreateDirectory(Settings.DataDir);
         using var w = new StreamWriter(DataFile, true);
+        int added = 0;
+        var seen = new HashSet<(ulong hi, ulong lo)>(existingKeys);
         foreach (var line in File.ReadLines(file))
         {
             var t = line.Trim(); if (t.Length == 0 || t[0] == '#') continue;
             var tok = t.Split(new[] { ' ', '\t', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)[0];
-            if (TryKey(tok, out var k) && existing.Count < MaxHashes && existing.Add(k)) { w.WriteLine(tok.ToLowerInvariant()); added++; }
+            if (TryKey(tok, out var k) && seen.Count < MaxHashes && seen.Add(k))
+            {
+                w.WriteLine(tok.ToLowerInvariant());
+                added++;
+            }
         }
         return added;
     }
@@ -75,7 +145,7 @@ public static class HashScanner
         return a && b && c ? "Self-test passed: EICAR pattern detected, clean data ignored, SHA-256 verified." : $"Self-test FAILED (eicar={a}, clean={b}, sha256={c}).";
     }
 
-    public static ScanReport Scan(string root, HashSet<(ulong, ulong)> hashes, Action<string> progress, CancellationToken ct)
+    public static ScanReport Scan(string root, HashSetCompact hashes, Action<string> progress, CancellationToken ct)
     {
         var rep = new ScanReport();
         var old = Thread.CurrentThread.Priority;
@@ -84,6 +154,7 @@ public static class HashScanner
             Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;   // stay out of the user's way
             var opts = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint };
             var buf = new byte[256];
+            const int hashBufferSize = 65536; // 64 KB buffer for hashing
             foreach (var f in new DirectoryInfo(root).EnumerateFiles("*", opts))
             {
                 ct.ThrowIfCancellationRequested();
@@ -94,7 +165,10 @@ public static class HashScanner
                     if (len > MaxFile) { rep.SkippedLarge++; continue; }
                     bool tiny = len <= 128;
                     if (!tiny && hashes.Count == 0) { rep.Scanned++; continue; }   // nothing to compare against
-                    using var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1, FileOptions.SequentialScan);
+
+                    // Use a properly buffered FileStream for efficient reading
+                    using var fs = new FileStream(f.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, hashBufferSize, FileOptions.SequentialScan);
+
                     if (tiny)
                     {
                         int n = fs.Read(buf, 0, buf.Length);

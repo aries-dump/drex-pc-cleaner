@@ -22,11 +22,11 @@ public sealed partial class MainForm : Form
     long _lastTotal;
     TextBox? _historyBox;
 
-    static readonly (string key, string glyph)[] Items =
+    static readonly string[] Items =
     {
-        ("Dashboard", "\uE80F"), ("Security", "\uE72E"), ("Threats", "\uE7BA"), ("Scanner", "\uE721"), ("Deep Clean", "\uE74D"), ("Startup", "\uE7E8"),
-        ("Large Files", "\uE8B7"), ("Duplicates", "\uE8C8"), ("Disk Usage", "\uEDA2"), ("Web Blocker", "\uE783"),
-        ("File Vault", "\uE72E"), ("Backup", "\uE74E"), ("Scheduler", "\uE787"), ("Event Log", "\uE8A5"), ("History", "\uE81C"), ("Settings", "\uE713"),
+        "Dashboard", "Security", "Threats", "Scanner", "Deep Clean", "Startup",
+        "Large Files", "Duplicates", "Disk Usage", "Web Blocker",
+        "File Vault", "Backup", "Scheduler", "Event Log", "History", "Settings"
     };
 
     readonly bool _startHidden;
@@ -44,12 +44,12 @@ public sealed partial class MainForm : Form
         var navHost = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new Padding(0, 80, 0, 0), BackColor = Theme.Surf };
         var foot = L(IsAdmin ? "● Administrator" : "● Standard user", 8.5f, IsAdmin ? Theme.Good : Theme.Muted, false, Theme.Surf);
         foot.Dock = DockStyle.Bottom; foot.AutoSize = false; foot.Height = 34; foot.Padding = new Padding(22, 0, 0, 0); foot.TextAlign = ContentAlignment.MiddleLeft;
-        var brand = L("DREX", 24, Theme.Violet, true, Theme.Surf); brand.Location = new Point(20, 18);
+        var brand = L("DREX", 24, Theme.Accent, true, Theme.Surf); brand.Location = new Point(20, 18);
         var sub = L("PC CLEANER", 8.5f, Theme.Muted, true, Theme.Surf); sub.Location = new Point(24, 62);
         side.Controls.Add(navHost); side.Controls.Add(foot); side.Controls.Add(brand); side.Controls.Add(sub);
-        foreach (var (k, g) in Items)
+        foreach (var k in Items)
         {
-            var n = new NavItem(k, g); var key = k;
+            var n = new NavItem(k); var key = k;
             n.Click += (_, _) => Go(key);
             _nav[k] = n; navHost.Controls.Add(n);
         }
@@ -180,7 +180,7 @@ public sealed partial class MainForm : Form
     {
         var c1 = new Card { Accent = true, Dock = DockStyle.Fill, Margin = new Padding(0, 0, 12, 0) };
         var c1cap = L("RECLAIMABLE  ·  SAFE TEMP", 8.5f, Theme.Muted, true, Theme.Surf); c1cap.Location = new Point(20, 16);
-        _lblReclaim = L("—", 30, Theme.Violet, true, Theme.Surf); _lblReclaim.Location = new Point(18, 38);
+        _lblReclaim = L("—", 30, Theme.Accent, true, Theme.Surf); _lblReclaim.Location = new Point(18, 38);
         var c1sub = L("Only files older than your minimum age. Locked files are skipped.", 8.5f, Theme.Muted, false, Theme.Surf);
         c1sub.MaximumSize = new Size(210, 0); c1sub.Location = new Point(20, 110);
         c1.Controls.AddRange(new Control[] { c1cap, _lblReclaim, c1sub });
@@ -294,8 +294,8 @@ public sealed partial class MainForm : Form
                 }
                 status.Text = $"Analysis complete — {Fmt.Size(total)} found. Close browsers first for best results.";
             }
-            catch (OperationCanceledException) { status.Text = "Cancelled."; }
-            catch (Exception ex) { status.Text = "Error: " + ex.Message; }
+            catch (OperationCanceledException) { status.Text = "Analysis cancelled."; }
+            catch (Exception ex) { status.Text = "Analysis failed. Check folder access and try again."; }
             finally { End(); analyze.Enabled = true; clean.Enabled = rows.Count > 0; cancel.Enabled = false; }
         };
 
@@ -318,7 +318,7 @@ public sealed partial class MainForm : Form
                 status.Text = $"Deep Clean finished — freed {Fmt.Size(freed)}. Click Analyze to refresh.";
             }
             catch (OperationCanceledException) { status.Text = $"Cancelled after freeing {Fmt.Size(freed)}."; History.Add("Deep clean cancelled"); }
-            catch (Exception ex) { status.Text = "Error: " + ex.Message; }
+            catch (Exception ex) { status.Text = "Clean failed. Some files may be in use — close apps and retry."; }
             finally { End(); analyze.Enabled = true; clean.Enabled = true; cancel.Enabled = false; }
         };
         cancel.Click += (_, _) => _cts?.Cancel();
@@ -334,7 +334,7 @@ public sealed partial class MainForm : Form
         var name = L(c.Name, 10.5f, Theme.Txt, true, Theme.Surf); name.Location = new Point(82, 10);
         string where = c.Recycle ? "Windows Recycle Bin" : string.Join("; ", c.Paths.Take(1)) + (c.Paths.Length > 1 ? $"  (+{c.Paths.Length - 1} more)" : "");
         var info = L(where, 8.5f, Theme.Muted, false, Theme.Surf); info.Location = new Point(82, 33); info.MaximumSize = new Size(560, 0);
-        var size = L(Fmt.Size(r.Bytes), 12, r.Bytes > 0 ? Theme.Violet : Theme.Muted, true, Theme.Surf); size.Location = new Point(400, 18);
+        var size = L(Fmt.Size(r.Bytes), 12, r.Bytes > 0 ? Theme.Accent : Theme.Muted, true, Theme.Surf); size.Location = new Point(400, 18);
         row.SizeChanged += (_, _) => size.Left = row.Width - size.Width - 22;
         row.Controls.AddRange(new Control[] { tg, name, info, size });
         return row;

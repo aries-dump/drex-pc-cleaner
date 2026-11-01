@@ -11,7 +11,9 @@ public static class DuplicateFinder
     public static List<DupGroup> Find(string root, long minBytes, Action<string> progress, CancellationToken ct)
     {
         var opts = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.ReparsePoint | FileAttributes.System };
-        var bySize = new Dictionary<long, List<string>>();
+
+        // PASS 1: Count files by size (only store counts, not paths)
+        var sizeCounts = new Dictionary<long, int>();
         int n = 0;
         foreach (var f in new DirectoryInfo(root).EnumerateFiles("*", opts))
         {
@@ -21,13 +23,30 @@ public static class DuplicateFinder
                 long len = f.Length;
                 if (len >= minBytes)
                 {
-                    if (!bySize.TryGetValue(len, out var l)) bySize[len] = l = new List<string>();
-                    l.Add(f.FullName);
+                    sizeCounts[len] = sizeCounts.GetValueOrDefault(len) + 1;
                 }
             }
             catch { }
             if (++n % 500 == 0) progress($"Indexing… {n:N0} files");
         }
+
+        // PASS 2: Only collect paths for sizes that have duplicates
+        var bySize = new Dictionary<long, List<string>>();
+        foreach (var f in new DirectoryInfo(root).EnumerateFiles("*", opts))
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                long len = f.Length;
+                if (len >= minBytes && sizeCounts.GetValueOrDefault(len) > 1)
+                {
+                    if (!bySize.TryGetValue(len, out var l)) bySize[len] = l = new List<string>();
+                    l.Add(f.FullName);
+                }
+            }
+            catch { }
+        }
+        sizeCounts.Clear(); // Release memory from pass 1
 
         var result = new List<DupGroup>();
         var buf = new byte[65536];
@@ -42,7 +61,7 @@ public static class DuplicateFinder
             {
                 try
                 {
-                    using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 1, FileOptions.SequentialScan);
+                    using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
                     int r = fs.Read(buf, 0, buf.Length);
                     var h = Convert.ToHexString(SHA256.HashData(new ReadOnlySpan<byte>(buf, 0, r)));
                     if (!part.TryGetValue(h, out var pl)) part[h] = pl = new List<string>();
@@ -59,7 +78,7 @@ public static class DuplicateFinder
                     ct.ThrowIfCancellationRequested();
                     try
                     {
-                        using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 81920, FileOptions.SequentialScan);
+                        using var fs = new FileStream(p, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 65536, FileOptions.SequentialScan);
                         var h = Convert.ToHexString(SHA256.HashData(fs));
                         if (!full.TryGetValue(h, out var fl)) full[h] = fl = new List<string>();
                         fl.Add(p);

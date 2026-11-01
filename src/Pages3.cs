@@ -2,7 +2,7 @@ namespace Drex;
 
 public sealed partial class MainForm : Form
 {
-    HashSet<(ulong, ulong)> _hashes = new();
+    HashSetCompact _hashes = HashSetCompact.Create(Array.Empty<(ulong hi, ulong lo)>());
 
     // ---------- Scanner + Quarantine ----------
     Control BuildScanner()
@@ -44,7 +44,7 @@ public sealed partial class MainForm : Form
                 History.Add($"Scanner: imported {added} hashes");
                 status.Text = $"Imported {added:N0} new hash(es). Total {_hashes.Count:N0} (limit 1,000,000).";
             }
-            catch (Exception ex) { status.Text = "Import failed: " + FirstLine(ex.Message); }
+            catch (Exception ex) { status.Text = "Import failed. Ensure the file is a valid text/CSV hash list."; }
         };
         test.Click += (_, _) => status.Text = HashScanner.SelfTest();
 
@@ -60,11 +60,11 @@ public sealed partial class MainForm : Form
                 dList.BeginUpdate();
                 foreach (var d in rep.Found) { var it = new ListViewItem(new[] { d.Name, d.Path, d.Sha256 }) { Tag = d, ForeColor = Theme.Bad }; dList.Items.Add(it); }
                 dList.EndUpdate();
-                status.Text = $"Scanned {rep.Scanned:N0} file(s): {rep.Found.Count} detection(s), {rep.SkippedLarge} over 256 MB skipped, {rep.Errors} unreadable. " + (hs.Count == 0 ? "No hash list imported — only EICAR test files can be found." : "");
+                status.Text = $"Scanned {rep.Scanned:N0} file(s): {rep.Found.Count} detection(s), {rep.SkippedLarge} over 256 MB skipped, {rep.Errors} unreadable. " + (hs.Count == 0 ? "Import a hash list to enable malware detection. EICAR test file is always detected." : "");
                 History.Add($"Scanner: {rep.Scanned} files, {rep.Found.Count} detections in {root}");
             }
             catch (OperationCanceledException) { status.Text = "Scan cancelled."; }
-            catch (Exception ex) { status.Text = "Scan error: " + FirstLine(ex.Message); }
+            catch (Exception ex) { status.Text = "Scan failed. Check folder permissions and try again."; }
             End(); scan.Enabled = true; cancel.Enabled = false;
         };
         cancel.Click += (_, _) => _cts?.Cancel();

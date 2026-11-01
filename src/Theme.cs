@@ -3,20 +3,31 @@ namespace Drex;
 
 public static class Theme
 {
-    public static readonly Color Bg = ColorTranslator.FromHtml("#0B0D12");
-    public static readonly Color Surf = ColorTranslator.FromHtml("#171B24");
-    public static readonly Color Surf2 = ColorTranslator.FromHtml("#202531");
-    public static readonly Color Txt = ColorTranslator.FromHtml("#F4F5F8");
-    public static readonly Color Silver = ColorTranslator.FromHtml("#C4CAD5");
-    public static readonly Color Muted = ColorTranslator.FromHtml("#8B93A4");
-    public static readonly Color Violet = ColorTranslator.FromHtml("#9875FF");
-    public static readonly Color VioletHi = ColorTranslator.FromHtml("#B49DFF");
-    public static readonly Color VioletLo = ColorTranslator.FromHtml("#7A56E8");
-    public static readonly Color Good = ColorTranslator.FromHtml("#4ADE80");
-    public static readonly Color Warn = ColorTranslator.FromHtml("#F2B35E");
-    public static readonly Color Bad = ColorTranslator.FromHtml("#F26D7D");
-    public static readonly Color Alt = ColorTranslator.FromHtml("#131720");
-    public static readonly Color Sel = ColorTranslator.FromHtml("#2B2450");
+    // Base: cooler, cleaner near-black — "system hygiene"
+    public static readonly Color Bg = ColorTranslator.FromHtml("#0A0E14");
+    public static readonly Color Surf = ColorTranslator.FromHtml("#111822");
+    public static readonly Color Surf2 = ColorTranslator.FromHtml("#1A2230");
+    public static readonly Color Txt = ColorTranslator.FromHtml("#F0F4F8");
+    public static readonly Color Silver = ColorTranslator.FromHtml("#B8C0CC");
+    public static readonly Color Muted = ColorTranslator.FromHtml("#8491A3");
+
+    // Accent: Teal-cyan — "clean", "fresh", "system" (not purple SaaS)
+    public static readonly Color Accent = ColorTranslator.FromHtml("#00D4A0");
+    public static readonly Color AccentHi = ColorTranslator.FromHtml("#33E0B8");
+    public static readonly Color AccentLo = ColorTranslator.FromHtml("#00A880");
+    public static readonly Color AccentMuted = ColorTranslator.FromHtml("#00D4A033"); // 20% opacity
+
+    // Semantic (kept — they work well)
+    public static readonly Color Good = ColorTranslator.FromHtml("#22C55E");
+    public static readonly Color Warn = ColorTranslator.FromHtml("#FBBF24");
+    public static readonly Color Bad = ColorTranslator.FromHtml("#EF4444");
+    public static readonly Color Alt = ColorTranslator.FromHtml("#0E1520");
+    public static readonly Color Sel = ColorTranslator.FromHtml("#0D3B2E"); // teal-tinted selection
+
+    // Backward compat aliases (for any missed refs)
+    public static readonly Color Violet = Accent;
+    public static readonly Color VioletHi = AccentHi;
+    public static readonly Color VioletLo = AccentLo;
 
     static readonly Dictionary<string, Font> _fonts = new();
     public static Font F(float size, bool bold = false) => Get(bold ? "Segoe UI Semibold" : "Segoe UI", size);

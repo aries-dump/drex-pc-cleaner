@@ -5,9 +5,12 @@ namespace Drex;
 public class Card : Panel
 {
     public bool Accent;
-    public int Radius = 14;
-    public Card()
+    // Hierarchical radii: 16 (page), 12 (section), 8 (inline/nested)
+    public int Radius = 12;
+    public Card() : this(12) { }
+    public Card(int radius)
     {
+        Radius = radius;
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         BackColor = Theme.Surf;
     }
@@ -20,7 +23,7 @@ public class Card : Panel
         using var path = Theme.Round(new Rectangle(0, 0, Width - 1, Height - 1), Radius);
         using var br = new SolidBrush(Theme.Surf);
         g.FillPath(br, path);
-        using var pen = new Pen(Accent ? Color.FromArgb(110, Theme.Violet) : Theme.Surf2, 1f);
+        using var pen = new Pen(Accent ? Color.FromArgb(110, Theme.Accent) : Theme.Surf2, 1f);
         g.DrawPath(pen, path);
     }
 }
@@ -53,19 +56,20 @@ public class GButton : Control
         Color fore;
         if (Primary && Enabled)
         {
-            for (int i = 1; i <= 3; i++)
+            // Single subtle glow on hover, no multi-layer glow
+            if (_hover)
             {
-                using var gp = Theme.Round(Rectangle.Inflate(r, i, i), 10 + i);
-                using var pen = new Pen(Color.FromArgb((_hover ? 46 : 26) / i, Theme.Violet), 1.2f);
-                g.DrawPath(pen, gp);
+                using var glowPath = Theme.Round(Rectangle.Inflate(r, 2, 2), 12);
+                using var glowPen = new Pen(Color.FromArgb(30, Theme.Accent), 1.5f);
+                g.DrawPath(glowPen, glowPath);
             }
-            using var lg = new LinearGradientBrush(r, _hover ? Theme.VioletHi : Theme.Violet, Theme.VioletLo, 90f);
+            using var lg = new LinearGradientBrush(r, _hover ? Theme.AccentHi : Theme.Accent, Theme.AccentLo, 90f);
             g.FillPath(lg, path);
             fore = Color.White;
         }
         else
         {
-            var fill = !Enabled ? Theme.Surf : _down ? Color.FromArgb(0x35, 0x3C, 0x50) : _hover ? Color.FromArgb(0x2B, 0x31, 0x42) : Theme.Surf2;
+            var fill = !Enabled ? Theme.Surf : _down ? Color.FromArgb(0x1A, 0x2A, 0x3A) : _hover ? Color.FromArgb(0x16, 0x22, 0x30) : Theme.Surf2;
             using var br = new SolidBrush(fill);
             g.FillPath(br, path);
             using var bp = new Pen(Color.FromArgb(0x2D, 0x34, 0x46));
@@ -100,7 +104,7 @@ public class Toggle : Control
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var r = new Rectangle(1, 1, Width - 3, Height - 3);
         using var path = Theme.Round(r, r.Height / 2);
-        using var br = new SolidBrush(_on ? Theme.Violet : Color.FromArgb(0x2B, 0x31, 0x42));
+        using var br = new SolidBrush(_on ? Theme.Accent : Color.FromArgb(0x1E, 0x26, 0x34));
         g.FillPath(br, path);
         int d = r.Height - 8;
         int x = _on ? r.Right - d - 4 : r.X + 4;
@@ -131,8 +135,8 @@ public class DarkBar : Control
         if (w >= Height)
         {
             var fr = new Rectangle(0, 0, w, Height - 1);
-            Color a = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.VioletLo;
-            Color b = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.VioletHi;
+            Color a = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.AccentLo;
+            Color b = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.AccentHi;
             using var fp = Theme.Round(fr, Height / 2);
             using var lg = new LinearGradientBrush(fr, a, b, 0f);
             g.FillPath(lg, fp);
@@ -152,7 +156,7 @@ public class Ring : Control
     public Ring()
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Size = new Size(110, 110);
+        Size = new Size(120, 120);
     }
     protected override void OnPaintBackground(PaintEventArgs e) { }
     protected override void OnPaint(PaintEventArgs e)
@@ -160,31 +164,37 @@ public class Ring : Control
         var g = e.Graphics;
         g.Clear(Parent?.BackColor ?? Theme.Bg);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var r = new Rectangle(9, 9, Width - 19, Height - 19);
-        using (var track = new Pen(Theme.Surf2, 10f)) g.DrawEllipse(track, r);
+        var r = new Rectangle(10, 10, Width - 20, Height - 20);
+
+        // Track: subtle, darker than surface
+        using (var track = new Pen(Color.FromArgb(0x1A, 0x22, 0x30), 10f)) g.DrawEllipse(track, r);
+
         float sweep = 360f * Math.Clamp(_v, 0f, 100f) / 100f;
         if (sweep > 1f)
         {
-            var col = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.Violet;
+            // Accent color based on value - teal for normal, semantic for warnings
+            Color col = _v >= 90 ? Theme.Bad : _v >= 75 ? Theme.Warn : Theme.Accent;
             using var pen = new Pen(col, 10f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
             g.DrawArc(pen, r, -90f, sweep);
         }
-        TextRenderer.DrawText(g, _big, Theme.F(Width > 130 ? 20f : 15f, true), new Rectangle(0, Height / 2 - 24, Width, 30), Theme.Txt, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g, _small, Theme.F(8.5f), new Rectangle(0, Height / 2 + 6, Width, 18), Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g, _big, Theme.F(Width > 140 ? 24f : 18f, true), new Rectangle(0, Height / 2 - 28, Width, 36), Theme.Txt, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g, _small, Theme.F(9f), new Rectangle(0, Height / 2 + 8, Width, 20), Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }
 
 public class NavItem : Control
 {
-    public string Glyph = "";
     bool _sel, _hover;
     [System.ComponentModel.Browsable(false), System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
     public bool Selected { get => _sel; set { if (_sel != value) { _sel = value; Invalidate(); } } }
-    public NavItem(string text, string glyph)
+    public NavItem(string text)
     {
         SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Text = text; Glyph = glyph; Size = new Size(212, 34); Cursor = Cursors.Hand; Font = Theme.F(10f);
+        Text = text; Cursor = Cursors.Hand; Font = Theme.F(10f);
         Margin = Padding.Empty; BackColor = Theme.Surf;
+        // Auto-size: text width + padding, min height 40
+        var textSize = TextRenderer.MeasureText(text, Font);
+        Height = Math.Max(40, textSize.Height + 16);
     }
     protected override void OnPaintBackground(PaintEventArgs e) { }
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
@@ -194,27 +204,39 @@ public class NavItem : Control
         var g = e.Graphics;
         g.Clear(Theme.Surf);
         g.SmoothingMode = SmoothingMode.AntiAlias;
-        var r = new Rectangle(10, 3, Width - 20, Height - 7);
-        if (_sel || _hover)
-        {
-            using var p = Theme.Round(r, 10);
-            using var br = new SolidBrush(_sel ? Color.FromArgb(0x22, 0x27, 0x36) : Color.FromArgb(0x1C, 0x21, 0x2D));
-            g.FillPath(br, p);
-        }
+        var r = new Rectangle(0, 0, Width, Height);
+
         if (_sel)
         {
-            using var glow = new SolidBrush(Color.FromArgb(34, Theme.Violet));
-            g.FillRectangle(glow, 0, 9, 8, Height - 18);
-            using var bar = new SolidBrush(Theme.Violet);
-            g.FillRectangle(bar, 0, 10, 3, Height - 20);
+            // Selected: left accent bar + subtle background tint
+            using var bar = new SolidBrush(Theme.Accent);
+            g.FillRectangle(bar, 0, 0, 3, Height);
+            using var bg = new SolidBrush(Color.FromArgb(0x0D, 0x3B, 0x2E)); // teal tint at ~10%
+            g.FillRectangle(bg, r);
         }
-        TextRenderer.DrawText(g, Glyph, Theme.Icons(12f), new Rectangle(22, 0, 26, Height), _sel ? Theme.Violet : Theme.Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g, Text, Font, new Rectangle(58, 0, Width - 62, Height), _sel ? Theme.Txt : Theme.Silver, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+        else if (_hover)
+        {
+            // Hover: subtle background only
+            using var bg = new SolidBrush(Color.FromArgb(0x16, 0x22, 0x30));
+            g.FillRectangle(bg, r);
+        }
+
+        // Text: left-aligned with generous padding, no glyph column
+        var textRect = new Rectangle(16, 0, Width - 20, Height);
+        Color textColor = _sel ? Theme.Txt : Theme.Silver;
+        TextRenderer.DrawText(g, Text, Font, textRect, textColor, TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
     }
 }
 
 public class DarkList : ListView
 {
+    // Cached drawing objects to avoid allocation on every draw call
+    private static readonly SolidBrush s_bgSel = new SolidBrush(Theme.Sel);
+    private static readonly SolidBrush s_bgSurf = new SolidBrush(Theme.Surf);
+    private static readonly Pen s_headerLine = new Pen(Theme.Surf2);
+    private static readonly SolidBrush s_headerBg = new SolidBrush(Theme.Bg);
+    private static readonly Pen s_rowDivider = new Pen(Color.FromArgb(0x1A, 0x22, 0x30)); // subtle divider
+
     public int BarColumn = -1;
     public DarkList(params (string name, int width)[] cols)
     {
@@ -225,6 +247,19 @@ public class DarkList : ListView
         foreach (var (n, w) in cols) Columns.Add(n, w);
         Native.DarkScroll(this);
         HandleCreated += (_, _) => FitLast();
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            s_bgSel?.Dispose();
+            s_bgSurf?.Dispose();
+            s_headerLine?.Dispose();
+            s_headerBg?.Dispose();
+            s_rowDivider?.Dispose();
+        }
+        base.Dispose(disposing);
     }
     protected override void OnResize(EventArgs e) { base.OnResize(e); FitLast(); }
     public void FitLast()
@@ -237,8 +272,8 @@ public class DarkList : ListView
     }
     protected override void OnDrawColumnHeader(DrawListViewColumnHeaderEventArgs e)
     {
-        using (var b = new SolidBrush(Theme.Bg)) e.Graphics.FillRectangle(b, e.Bounds);
-        using (var p = new Pen(Theme.Surf2)) e.Graphics.DrawLine(p, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
+        e.Graphics.FillRectangle(s_headerBg, e.Bounds);
+        e.Graphics.DrawLine(s_headerLine, e.Bounds.Left, e.Bounds.Bottom - 1, e.Bounds.Right, e.Bounds.Bottom - 1);
         var r = new Rectangle(e.Bounds.X + 10, e.Bounds.Y, Math.Max(10, e.Bounds.Width - 12), e.Bounds.Height);
         TextRenderer.DrawText(e.Graphics, e.Header?.Text ?? "", Theme.F(8.5f, true), r, Theme.Muted, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
     }
@@ -248,20 +283,36 @@ public class DarkList : ListView
         var g = e.Graphics; var it = e.Item; if (it == null) return;
         var r = e.Bounds;
         if (e.ColumnIndex == 0) r = new Rectangle(r.X, r.Y, Columns[0].Width, r.Height);
-        using (var bg = new SolidBrush(it.Selected ? Theme.Sel : (e.ItemIndex % 2 == 0 ? Theme.Surf : Theme.Alt))) g.FillRectangle(bg, r);
+
+        // Background: selected = teal tint, otherwise uniform surface (no zebra)
+        var bgBrush = it.Selected ? s_bgSel : s_bgSurf;
+        g.FillRectangle(bgBrush, r);
+
+        // Subtle row divider (except last row)
+        if (e.ItemIndex < Items.Count - 1)
+        {
+            g.DrawLine(s_rowDivider, r.Left + 10, r.Bottom - 1, r.Right - 10, r.Bottom - 1);
+        }
+
         string text = e.SubItem?.Text ?? "";
         if (e.ColumnIndex == BarColumn)
         {
             double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double pct);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             var tr = new Rectangle(r.X + 10, r.Y + r.Height / 2 - 4, Math.Max(20, r.Width - 74), 8);
-            using (var tp = Theme.Round(tr, 4)) using (var tb = new SolidBrush(Theme.Surf2)) g.FillPath(tb, tp);
+
+            // Progress bar background: subtle surface
+            using (var tp = Theme.Round(tr, 4))
+            using (var bg = new SolidBrush(Theme.Surf2))
+                g.FillPath(bg, tp);
+
             int w = (int)(tr.Width * Math.Clamp(pct, 0, 100) / 100.0);
             if (w >= 8)
             {
                 var fr = new Rectangle(tr.X, tr.Y, w, tr.Height);
                 using var fp = Theme.Round(fr, 4);
-                using var lg = new LinearGradientBrush(fr, Theme.VioletLo, Theme.VioletHi, 0f);
+                // Use Accent gradient (teal) instead of Violet
+                using var lg = new LinearGradientBrush(fr, Theme.AccentLo, Theme.AccentHi, 0f);
                 g.FillPath(lg, fp);
             }
             TextRenderer.DrawText(g, pct.ToString("0.#", CultureInfo.InvariantCulture) + "%", Theme.F(8.5f), new Rectangle(tr.Right + 4, r.Y, 56, r.Height), Theme.Silver, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.NoPrefix);

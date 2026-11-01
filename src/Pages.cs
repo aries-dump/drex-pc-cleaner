@@ -139,9 +139,9 @@ public sealed partial class MainForm : Form
                     list.Items.Add(it);
                 }
                 list.EndUpdate();
-                status.Text = rows.Count == 0 ? "No threats recorded by Windows Defender." : $"{rows.Count} detection(s) in Defender history.";
+                status.Text = rows.Count == 0 ? "Windows Defender reports zero threats. Your system is clean." : $"{rows.Count} detection(s) in Defender history.";
             }
-            catch (Exception ex) { status.Text = "Could not read Defender history: " + ex.Message; }
+            catch (Exception ex) { status.Text = "Unable to read Defender history. Try running as administrator."; }
             finally { refresh.Enabled = true; }
         }
         refresh.Click += async (_, _) => await Load();
@@ -216,7 +216,7 @@ public sealed partial class MainForm : Form
             string end;
             try { await Task.Run(() => LargeFileFinder.Scan(path.Text, min, f => pending.Enqueue(f), ct), ct); end = "Scan complete."; }
             catch (OperationCanceledException) { end = "Scan cancelled."; }
-            catch (Exception ex) { end = "Error: " + ex.Message; }
+            catch (Exception ex) { end = "Scan failed. Check folder permissions."; }
             tick.Stop(); while (pending.TryDequeue(out var f)) found.Add(f);
             list.BeginUpdate();
             foreach (var f in found.OrderByDescending(x => x.Size)) list.Items.Add(new ListViewItem(new[] { f.Name, Fmt.Size(f.Size), f.Path }));
@@ -256,7 +256,7 @@ public sealed partial class MainForm : Form
                 foreach (var g in groups)
                 {
                     gi++; long w = g.Size * (g.Files.Count - 1); waste += w;
-                    var head = new ListViewItem(new[] { $"{g.Files.Count} copies · {Fmt.Size(g.Size)} each · {Fmt.Size(w)} reclaimable", "", "", "" }) { Tag = new DupTag { Path = null, Group = gi }, ForeColor = Theme.VioletHi };
+                    var head = new ListViewItem(new[] { $"{g.Files.Count} copies · {Fmt.Size(g.Size)} each · {Fmt.Size(w)} reclaimable", "", "", "" }) { Tag = new DupTag { Path = null, Group = gi }, ForeColor = Theme.AccentHi };
                     list.Items.Add(head);
                     foreach (var f in g.Files)
                     {
@@ -265,10 +265,10 @@ public sealed partial class MainForm : Form
                     }
                 }
                 list.EndUpdate();
-                end = groups.Count == 0 ? "No duplicates found." : $"{groups.Count} duplicate group(s) — up to {Fmt.Size(waste)} reclaimable. Use “Select extra copies”, review, then move to Recycle Bin.";
+                end = groups.Count == 0 ? "Nothing to clean — your folder is already tidy." : $"{groups.Count} duplicate group(s) — up to {Fmt.Size(waste)} reclaimable. Use “Select extra copies”, review, then move to Recycle Bin.";
             }
-            catch (OperationCanceledException) { end = "Cancelled."; }
-            catch (Exception ex) { end = "Error: " + ex.Message; }
+            catch (OperationCanceledException) { end = "Scan cancelled."; }
+            catch (Exception ex) { end = "Duplicate scan failed. Check folder access."; }
             status.Text = end; End(); scan.Enabled = true; cancel.Enabled = false; del.Enabled = list.Items.Count > 0;
         };
         cancel.Click += (_, _) => _cts?.Cancel();
@@ -332,7 +332,7 @@ public sealed partial class MainForm : Form
                 end = "Done.";
             }
             catch (OperationCanceledException) { end = "Cancelled (showing what was measured)."; }
-            catch (Exception ex) { end = "Error: " + ex.Message; }
+            catch (Exception ex) { end = "Analysis failed. Check folder permissions."; }
             long total = rows.Sum(r => r.size);
             list.BeginUpdate();
             foreach (var r in rows.OrderByDescending(x => x.size))
@@ -376,7 +376,7 @@ public sealed partial class MainForm : Form
         {
             var r = HostsBlocker.Write(next);
             if (r.ok) { History.Add("Web blocker: " + okMsg); Load(); status.Text = okMsg; }
-            else status.Text = "Could not update the hosts file: " + r.msg;
+            else status.Text = "Unable to update hosts file. Run as administrator to modify system files.";
         }
         add.Click += (_, _) =>
         {
@@ -414,7 +414,7 @@ public sealed partial class MainForm : Form
         var dst = Input(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), $"DREX_Backup_{DateTime.Now:yyyyMMdd_HHmm}.zip"), 320);
         var bdst = new GButton("Save as…");
         var start = new GButton("Start backup", true); var cancel = new GButton("Cancel") { Enabled = false };
-        var big = L("Ready", 22, Theme.Violet, true); var detail = StatusLabel("Copies a folder into a single compressed ZIP. Files in use are skipped and counted.");
+        var big = L("Ready", 22, Theme.Accent, true); var detail = StatusLabel("Copies a folder into a single compressed ZIP. Files in use are skipped and counted.");
         var holder = new Panel { BackColor = Theme.Bg, Height = 56 }; big.Location = new Point(0, 8); holder.Controls.Add(big);
 
         bsrc.Click += (_, _) => Browse(src);

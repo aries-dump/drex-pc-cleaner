@@ -42,7 +42,7 @@ public sealed partial class MainForm : Form
             var r = await Task.Run(() => TaskSched.CreateWeekly(taskName, dd, tm, cmd, !isClean));
             History.Add($"Scheduler: {(r.ok ? "created" : "failed")} '{taskName}' ({dd} {tm})" + (r.ok ? "" : " - " + FirstLine(r.msg)));
             await Refresh();
-            if (!r.ok) status.Text = "Could not create the task: " + FirstLine(r.msg) + (IsAdmin || isClean ? "" : "  (Use “Restart as admin” in Settings first.)");
+            if (!r.ok) status.Text = "Unable to create scheduled task. " + (IsAdmin || isClean ? "Check task name and try again." : "Use “Restart as admin” in Settings first.");
             enable.Enabled = true;
         };
         remove.Click += async (_, _) =>
@@ -82,7 +82,7 @@ public sealed partial class MainForm : Form
                 list.EndUpdate();
                 status.Text = $"{rows.Count} event(s).";
             }
-            catch (Exception ex) { status.Text = "Could not read the log: " + FirstLine(ex.Message) + (IsAdmin ? "" : "  (Try “Restart as admin”.)"); }
+            catch (Exception ex) { status.Text = "Unable to read event log. " + (IsAdmin ? "Check Windows Event Log service." : "Use “Restart as admin” in Settings."); }
             finally { refresh.Enabled = true; }
         }
         refresh.Click += async (_, _) => await Load();

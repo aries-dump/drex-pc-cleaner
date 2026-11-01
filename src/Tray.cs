@@ -35,7 +35,7 @@ public sealed partial class MainForm : Form
     static Icon IconFor(TrayState s)
     {
         if (_icons.TryGetValue(s, out var cached)) return cached;
-        var col = s switch { TrayState.Protected => Theme.Good, TrayState.Warning => Theme.Warn, TrayState.Disabled => Theme.Bad, TrayState.Scanning => Theme.Violet, _ => Theme.Muted };
+        var col = s switch { TrayState.Protected => Theme.Good, TrayState.Warning => Theme.Warn, TrayState.Disabled => Theme.Bad, TrayState.Scanning => Theme.Accent, _ => Theme.Muted };
         using var bmp = new Bitmap(32, 32);
         using (var g = Graphics.FromImage(bmp))
         {

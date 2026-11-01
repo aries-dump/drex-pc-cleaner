@@ -19,6 +19,12 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <DebugType>none</DebugType>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- Memory optimization settings -->
+    <RuntimeHostConfigurationOption>System.GC.ConserveMemory=5</RuntimeHostConfigurationOption>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SelfContained>true</SelfContained>
   </PropertyGroup>
   <ItemGroup>
     <EmbeddedResource Include="drex.ico" LogicalName="drex.ico" />
