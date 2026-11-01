@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.IO;
 using Microsoft.Win32;
+using System.Net;
 namespace Drex;
 
 public sealed partial class MainForm : Form
@@ -26,7 +28,7 @@ public sealed partial class MainForm : Form
     {
         "Dashboard", "Security", "Threats", "Scanner", "Deep Clean", "Startup",
         "Large Files", "Duplicates", "Disk Usage", "Web Blocker",
-        "File Vault", "Backup", "Scheduler", "Event Log", "History", "Settings"
+        "File Vault", "Backup", "Scheduler", "Event Log", "History", "Settings", "Profile"
     };
 
     readonly bool _startHidden;
@@ -58,10 +60,58 @@ public sealed partial class MainForm : Form
         _ramTimer.Tick += (_, _) => UpdateSystem();
         Shown += async (_, _) =>
         {
-            Go("Dashboard"); StartRamTimer();
-            if (_startHidden) { Hide(); Opacity = 1; ShowInTaskbar = true; }
-            await RunLaunchFlow();
-            await TrayVerify();
+            // Check for remember me token for auto-login
+            var rememberedProfile = AuthService.CheckRememberMeToken();
+            if (rememberedProfile != null)
+            {
+                // Valid remember me token - auto login
+                UserProfileStore.CurrentProfile = rememberedProfile;
+                UserProfileStore.Save(rememberedProfile);
+                Go("Dashboard"); StartRamTimer();
+                if (_startHidden) { Hide(); Opacity = 1; ShowInTaskbar = true; }
+                await RunLaunchFlow();
+                await TrayVerify();
+                return;
+            }
+
+            if (!UserProfileStore.IsLoggedIn && !_s.FirstLaunchCompleted)
+            {
+                // First launch - show login form
+                Hide();
+                var loginForm = new LoginForm();
+                if (loginForm.ShowDialog(this) == DialogResult.OK && loginForm.AuthenticatedProfile != null)
+                {
+                    UserProfileStore.CurrentProfile = loginForm.AuthenticatedProfile;
+                    UserProfileStore.Save(loginForm.AuthenticatedProfile);
+                    _s.FirstLaunchCompleted = true;
+                    _s.Save();
+                    Show();
+                    Go("Dashboard"); StartRamTimer();
+                    await RunLaunchFlow();
+                    await TrayVerify();
+                }
+                else
+                {
+                    // User cancelled login - exit
+                    Application.Exit();
+                }
+            }
+            else if (UserProfileStore.IsLoggedIn)
+            {
+                // User already logged in
+                Go("Dashboard"); StartRamTimer();
+                if (_startHidden) { Hide(); Opacity = 1; ShowInTaskbar = true; }
+                await RunLaunchFlow();
+                await TrayVerify();
+            }
+            else
+            {
+                // First launch completed but not logged in (shouldn't happen)
+                Go("Dashboard"); StartRamTimer();
+                if (_startHidden) { Hide(); Opacity = 1; ShowInTaskbar = true; }
+                await RunLaunchFlow();
+                await TrayVerify();
+            }
         };
         FormClosing += (_, e) =>
         {
@@ -167,12 +217,13 @@ public sealed partial class MainForm : Form
             {
                 "Dashboard" => BuildDashboard(), "Security" => BuildSecurity(), "Threats" => BuildThreats(), "Scanner" => BuildScanner(), "Deep Clean" => BuildDeep(), "Startup" => BuildStartup(),
                 "Large Files" => BuildLarge(), "Duplicates" => BuildDupes(), "Disk Usage" => BuildDisk(), "Web Blocker" => BuildWeb(),
-                "Backup" => BuildBackup(), "File Vault" => BuildVault(), "Scheduler" => BuildScheduler(), "Event Log" => BuildEvents(), "History" => BuildHistory(), _ => BuildSettings()
+                "Backup" => BuildBackup(), "File Vault" => BuildVault(), "Scheduler" => BuildScheduler(), "Event Log" => BuildEvents(), "History" => BuildHistory(), "Profile" => ProfilePage.Build(UserProfileStore.CurrentProfile!, this), _ => BuildSettings()
             };
             page.Dock = DockStyle.Fill; _pages[name] = page; _content.Controls.Add(page);
         }
         page.BringToFront();
         if (name == "History" && _historyBox != null) { _historyBox.Text = History.ReadAll(); _historyBox.SelectionStart = _historyBox.TextLength; _historyBox.ScrollToCaret(); }
+        if (name == "Profile" && UserProfileStore.IsLoggedIn) { _pages["Profile"] = ProfilePage.Build(UserProfileStore.CurrentProfile!, this); _content.Controls.Add(_pages["Profile"]); _pages["Profile"].BringToFront(); }
     }
 
     // ---------- Dashboard ----------

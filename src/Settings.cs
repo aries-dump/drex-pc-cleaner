@@ -11,6 +11,8 @@ public sealed class Settings
     public bool CloseToTray { get; set; } = true;
     public bool CloseAsked { get; set; } = false;
     public bool UsbAutoScan { get; set; } = false;
+    public bool FirstLaunchCompleted { get; set; } = false;
+    public bool AutoLoginEnabled { get; set; } = true;
 
     static readonly string Dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "DrexPcCleaner");
     static readonly string FilePath = Path.Combine(Dir, "settings.json");
