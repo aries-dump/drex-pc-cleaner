@@ -195,6 +195,8 @@ public class NavItem : Control
         // Auto-size: text width + padding, min height 40
         var textSize = TextRenderer.MeasureText(text, Font);
         Height = Math.Max(40, textSize.Height + 16);
+        // Fixed width matching sidebar (212) so FlowLayoutPanel lays out correctly
+        Width = 212;
     }
     protected override void OnPaintBackground(PaintEventArgs e) { }
     protected override void OnMouseEnter(EventArgs e) { _hover = true; Invalidate(); base.OnMouseEnter(e); }
