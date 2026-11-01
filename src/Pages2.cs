@@ -82,7 +82,7 @@ public sealed partial class MainForm : Form
                 list.EndUpdate();
                 status.Text = $"{rows.Count} event(s).";
             }
-            catch (Exception ex) { status.Text = "Unable to read event log. " + (IsAdmin ? "Check Windows Event Log service." : "Use “Restart as admin” in Settings."); }
+            catch (Exception) { status.Text = "Unable to read event log. " + (IsAdmin ? "Check Windows Event Log service." : "Use “Restart as admin” in Settings."); }
             finally { refresh.Enabled = true; }
         }
         refresh.Click += async (_, _) => await Load();

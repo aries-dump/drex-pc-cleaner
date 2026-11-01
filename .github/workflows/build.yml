@@ -50,7 +50,7 @@ jobs:
 
       - name: Publish framework-dependent (smaller, needs .NET 10 runtime)
         shell: pwsh
-        run: dotnet publish "$env:PROJ" -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o out/framework-dependent
+        run: dotnet publish "$env:PROJ" -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=false -o out/framework-dependent
 
       - name: Publish self-contained (no runtime needed, larger)
         shell: pwsh
